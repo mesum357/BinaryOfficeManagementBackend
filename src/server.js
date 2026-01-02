@@ -28,7 +28,9 @@ const io = new Server(server, {
   cors: {
     origin: [
       process.env.EMPLOYEE_PORTAL_URL || 'http://localhost:5173',
-      process.env.MANAGEMENT_PORTAL_URL || 'http://localhost:5174'
+      process.env.MANAGEMENT_PORTAL_URL || 'http://localhost:5174',
+      'https://employee-website-dkq3.onrender.com',
+      'https://management-website-mu6q.onrender.com'
     ],
     methods: ['GET', 'POST']
   }
@@ -38,7 +40,9 @@ const io = new Server(server, {
 app.use(cors({
   origin: [
     process.env.EMPLOYEE_PORTAL_URL || 'http://localhost:5173',
-    process.env.MANAGEMENT_PORTAL_URL || 'http://localhost:5174'
+    process.env.MANAGEMENT_PORTAL_URL || 'http://localhost:5174',
+    'https://employee-website-dkq3.onrender.com',
+    'https://management-website-mu6q.onrender.com'
   ],
   credentials: true
 }));
