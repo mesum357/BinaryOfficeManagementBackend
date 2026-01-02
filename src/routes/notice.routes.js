@@ -37,7 +37,7 @@ router.get('/', protect, async (req, res) => {
     }
 
     const notices = await Notice.find(query)
-      .populate('publishedBy', 'email')
+      .populate('publishedBy', 'email role')
       .populate('departments', 'name')
       .skip((page - 1) * limit)
       .limit(parseInt(limit))
@@ -101,7 +101,7 @@ router.get('/recent', protect, async (req, res) => {
 router.get('/:id', protect, async (req, res) => {
   try {
     const notice = await Notice.findById(req.params.id)
-      .populate('publishedBy', 'email')
+      .populate('publishedBy', 'email role')
       .populate('departments', 'name')
       .populate('readBy.user', 'email')
       .populate('acknowledgedBy.user', 'email');
