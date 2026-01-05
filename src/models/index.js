@@ -8,6 +8,7 @@ const Meeting = require('./Meeting');
 const Task = require('./Task');
 const Chat = require('./Chat');
 const Recruitment = require('./Recruitment');
+const MessageRequest = require('./MessageRequest');
 
 module.exports = {
   User,
@@ -19,6 +20,7 @@ module.exports = {
   Meeting,
   Task,
   Chat,
-  Recruitment
+  Recruitment,
+  MessageRequest
 };
 

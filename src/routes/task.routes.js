@@ -1,7 +1,9 @@
 const express = require('express');
+const path = require('path');
 const Task = require('../models/Task');
 const { protect, isManagerOrAbove } = require('../middleware/auth');
 const { taskValidator } = require('../middleware/validators');
+const upload = require('../config/upload');
 
 const router = express.Router();
 
@@ -39,6 +41,7 @@ router.get('/', protect, async (req, res) => {
       .populate('assignedBy', 'email')
       .populate('assignedTo', 'firstName lastName employeeId')
       .populate('department', 'name')
+      .populate('attachments.uploadedBy', 'email')
       .skip((page - 1) * limit)
       .limit(parseInt(limit))
       .sort({ dueDate: 1, priority: -1 });
@@ -229,23 +232,55 @@ router.put('/:id', protect, async (req, res) => {
 
     // Check permissions
     const isAssigner = task.assignedBy.toString() === req.user._id.toString();
-    const isAssignee = task.assignedTo.some(
-      e => e.toString() === req.user.employee?.toString()
+    
+    // Check if user is an assignee - handle both ObjectId and populated cases
+    let userEmployeeId = null;
+    if (req.user.employee) {
+      // Handle both populated object and ObjectId
+      userEmployeeId = req.user.employee._id 
+        ? req.user.employee._id.toString() 
+        : req.user.employee.toString();
+    }
+    
+    const isAssignee = userEmployeeId && task.assignedTo.some(
+      (e) => {
+        // Handle both ObjectId and populated employee object
+        const employeeId = e._id ? e._id.toString() : e.toString();
+        return employeeId === userEmployeeId;
+      }
     );
+    
     const isManager = ['manager', 'boss', 'admin'].includes(req.user.role);
 
     if (!isAssigner && !isAssignee && !isManager) {
       return res.status(403).json({
         success: false,
-        message: 'Not authorized to update this task'
+        message: 'Not authorized to update this task. You must be assigned to this task, the task creator, or a manager.'
       });
     }
 
-    // Assignees can only update status and progress
+    // Assignees can only update status, progress, submissionDescription, and attachments
     let updateData = req.body;
     if (!isAssigner && !isManager) {
-      const { status, progress, actualHours } = req.body;
+      const { status, progress, actualHours, submissionDescription, attachments } = req.body;
       updateData = { status, progress, actualHours };
+      
+      // Allow submission description and attachments when submitting
+      if (submissionDescription !== undefined) {
+        updateData.submissionDescription = submissionDescription;
+        updateData.submissionDate = new Date();
+      }
+      
+      if (attachments && Array.isArray(attachments)) {
+        // Add new attachments to existing ones
+        const existingAttachments = task.attachments || [];
+        updateData.attachments = [...existingAttachments, ...attachments.map(att => ({
+          name: att.name,
+          url: att.url,
+          uploadedBy: req.user._id,
+          uploadedAt: new Date()
+        }))];
+      }
       
       if (status === 'completed') {
         updateData.completedDate = new Date();
@@ -256,7 +291,8 @@ router.put('/:id', protect, async (req, res) => {
       req.params.id,
       updateData,
       { new: true, runValidators: true }
-    ).populate('assignedTo', 'firstName lastName');
+    ).populate('assignedTo', 'firstName lastName employeeId')
+     .populate('assignedBy', 'email');
 
     res.json({
       success: true,
@@ -267,6 +303,76 @@ router.put('/:id', protect, async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Error updating task',
+      error: error.message
+    });
+  }
+});
+
+// @route   POST /api/tasks/:id/upload
+// @desc    Upload image for task submission
+// @access  Private
+router.post('/:id/upload', protect, upload.single('image'), async (req, res) => {
+  try {
+    const task = await Task.findById(req.params.id);
+
+    if (!task) {
+      return res.status(404).json({
+        success: false,
+        message: 'Task not found'
+      });
+    }
+
+    // Check if user is assignee
+    const userEmployeeId = req.user.employee 
+      ? (req.user.employee._id ? req.user.employee._id.toString() : req.user.employee.toString())
+      : null;
+    
+    const isAssignee = userEmployeeId && task.assignedTo.some(
+      (e) => {
+        const employeeId = e._id ? e._id.toString() : e.toString();
+        return employeeId === userEmployeeId;
+      }
+    );
+
+    if (!isAssignee) {
+      return res.status(403).json({
+        success: false,
+        message: 'Not authorized to upload images for this task'
+      });
+    }
+
+    if (!req.file) {
+      return res.status(400).json({
+        success: false,
+        message: 'No image file provided'
+      });
+    }
+
+    // Add attachment to task
+    const fileUrl = `/uploads/tasks/${req.file.filename}`;
+    task.attachments.push({
+      name: req.file.originalname,
+      url: fileUrl,
+      uploadedBy: req.user._id,
+      uploadedAt: new Date()
+    });
+    await task.save();
+
+    res.json({
+      success: true,
+      message: 'Image uploaded successfully',
+      data: {
+        attachment: {
+          name: req.file.originalname,
+          url: fileUrl,
+          uploadedAt: new Date()
+        }
+      }
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Error uploading image',
       error: error.message
     });
   }

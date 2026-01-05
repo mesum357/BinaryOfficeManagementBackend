@@ -84,6 +84,13 @@ const taskSchema = new mongoose.Schema({
       default: Date.now
     }
   }],
+  submissionDescription: {
+    type: String,
+    default: ''
+  },
+  submissionDate: {
+    type: Date
+  },
   subtasks: [{
     title: String,
     isCompleted: {

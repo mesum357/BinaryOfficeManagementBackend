@@ -2,6 +2,7 @@ require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const http = require('http');
+const path = require('path');
 const { Server } = require('socket.io');
 const connectDB = require('./config/database');
 const passport = require('./config/passport');
@@ -16,6 +17,7 @@ const noticeRoutes = require('./routes/notice.routes');
 const meetingRoutes = require('./routes/meeting.routes');
 const taskRoutes = require('./routes/task.routes');
 const chatRoutes = require('./routes/chat.routes');
+const messageRequestRoutes = require('./routes/messageRequest.routes');
 const reportRoutes = require('./routes/report.routes');
 const recruitmentRoutes = require('./routes/recruitment.routes');
 const departmentRoutes = require('./routes/department.routes');
@@ -49,6 +51,9 @@ app.use(cors({
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
+// Serve uploaded files
+app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
+
 // Initialize Passport
 app.use(passport.initialize());
 
@@ -56,7 +61,31 @@ app.use(passport.initialize());
 app.set('io', io);
 
 // API Routes
-app.use('/api/auth', authRoutes);
+console.log('[SERVER] Loading auth routes...');
+
+// Debug: Log all routes from auth router BEFORE mounting
+console.log('[SERVER] Auth router type:', typeof authRoutes);
+console.log('[SERVER] Auth router has stack:', authRoutes && typeof authRoutes.stack !== 'undefined');
+
+if (authRoutes && authRoutes.stack) {
+  console.log('[SERVER] Auth routes in router (before mounting):');
+  authRoutes.stack.forEach((middleware, index) => {
+    if (middleware.route) {
+      const methods = Object.keys(middleware.route.methods).join(',').toUpperCase();
+      console.log(`  [${index}] ${methods} /api/auth${middleware.route.path}`);
+    } else if (middleware.name !== '<anonymous>') {
+      console.log(`  [${index}] Middleware: ${middleware.name || 'anonymous'}`);
+    }
+  });
+  console.log('[SERVER] Total middleware in auth router:', authRoutes.stack.length);
+}
+
+app.use('/api/auth', (req, res, next) => {
+  console.log(`[AUTH MIDDLEWARE] ${req.method} ${req.path}`);
+  next();
+}, authRoutes);
+
+console.log('[SERVER] Auth routes mounted at /api/auth');
 app.use('/api/users', userRoutes);
 app.use('/api/employees', employeeRoutes);
 app.use('/api/attendance', attendanceRoutes);
@@ -65,6 +94,7 @@ app.use('/api/notices', noticeRoutes);
 app.use('/api/meetings', meetingRoutes);
 app.use('/api/tasks', taskRoutes);
 app.use('/api/chat', chatRoutes);
+app.use('/api/message-requests', messageRequestRoutes);
 app.use('/api/reports', reportRoutes);
 app.use('/api/recruitment', recruitmentRoutes);
 app.use('/api/departments', departmentRoutes);
@@ -129,11 +159,15 @@ app.use((err, req, res, next) => {
   });
 });
 
-// 404 handler
+// 404 handler with debugging
 app.use((req, res) => {
+  console.log('[404 HANDLER] Route not found:', req.method, req.path);
+  console.log('[404 HANDLER] Available routes:', req.app._router?.stack?.length || 'unknown');
   res.status(404).json({ 
     success: false,
-    message: 'Route not found' 
+    message: 'Route not found',
+    path: req.path,
+    method: req.method
   });
 });
 

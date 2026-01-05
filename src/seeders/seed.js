@@ -222,42 +222,9 @@ const seedDatabase = async () => {
     ]);
     console.log('✅ Created notices');
 
-    // Create sample Tasks
-    await Task.insertMany([
-      {
-        title: 'Complete Q4 Report',
-        description: 'Prepare and submit the quarterly financial report',
-        assignedBy: users[2]._id,
-        assignedTo: [employees[6]._id],
-        department: departments[3]._id,
-        priority: 'high',
-        status: 'in-progress',
-        dueDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
-        progress: 40
-      },
-      {
-        title: 'Update Employee Handbook',
-        description: 'Review and update the employee handbook with new policies',
-        assignedBy: users[2]._id,
-        assignedTo: [employees[1]._id],
-        department: departments[0]._id,
-        priority: 'medium',
-        status: 'pending',
-        dueDate: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000)
-      },
-      {
-        title: 'Website Redesign',
-        description: 'Complete the homepage redesign for the company website',
-        assignedBy: users[3]._id,
-        assignedTo: [employees[4]._id],
-        department: departments[1]._id,
-        priority: 'high',
-        status: 'in-progress',
-        dueDate: new Date(Date.now() + 10 * 24 * 60 * 60 * 1000),
-        progress: 60
-      }
-    ]);
-    console.log('✅ Created tasks');
+    // Create sample Tasks - Removed mock tasks
+    // Tasks will be created through the application UI
+    console.log('✅ Tasks section skipped (use application UI to create tasks)');
 
     // Create sample Meetings
     await Meeting.insertMany([

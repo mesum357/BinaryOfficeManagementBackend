@@ -48,7 +48,35 @@ const userSchema = new mongoose.Schema({
     type: Date
   },
   passwordResetToken: String,
-  passwordResetExpires: Date
+  passwordResetExpires: Date,
+  // WebAuthn / Fingerprint authentication credentials
+  webauthnCredentials: [{
+    credentialId: {
+      type: String,
+      required: true
+    },
+    publicKey: {
+      type: String,
+      required: true
+    },
+    counter: {
+      type: Number,
+      default: 0
+    },
+    registeredAt: {
+      type: Date,
+      default: Date.now
+    },
+    deviceName: String,
+    lastUsed: Date
+  }],
+  // Temporary fields for WebAuthn flows (not stored permanently)
+  webauthnRegistrationChallenge: String,
+  webauthnLoginChallenge: String,
+  webauthnLoginUserId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User'
+  }
 }, {
   timestamps: true
 });
