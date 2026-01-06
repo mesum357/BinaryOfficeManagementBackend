@@ -18,7 +18,8 @@ router.get('/', protect, async (req, res) => {
       page = 1, 
       limit = 20,
       sortBy = 'createdAt',
-      sortOrder = 'desc'
+      sortOrder = 'desc',
+      hasAccount // Filter by employees with verified accounts
     } = req.query;
     
     const query = {};
@@ -35,6 +36,16 @@ router.get('/', protect, async (req, res) => {
 
     const sortOptions = {};
     sortOptions[sortBy] = sortOrder === 'asc' ? 1 : -1;
+
+    // If hasAccount is true, filter to only employees with verified user accounts
+    if (hasAccount === 'true') {
+      const usersWithAccounts = await User.find({
+        verificationStatus: 'approved'
+      }).select('employee');
+      
+      const verifiedEmployeeIds = usersWithAccounts.map(u => u.employee.toString());
+      query._id = { $in: verifiedEmployeeIds };
+    }
 
     const employees = await Employee.find(query)
       .populate('department', 'name code')
@@ -240,10 +251,53 @@ router.put('/:id', protect, async (req, res) => {
   }
 });
 
-// @route   DELETE /api/employees/:id
-// @desc    Deactivate employee
+// @route   PUT /api/employees/:id/freeze
+// @desc    Freeze/unfreeze employee account
 // @access  Private (HR or above)
-router.delete('/:id', protect, isHROrAbove, async (req, res) => {
+router.put('/:id/freeze', protect, isHROrAbove, async (req, res) => {
+  try {
+    const { isActive } = req.body;
+    const employee = await Employee.findById(req.params.id);
+
+    if (!employee) {
+      return res.status(404).json({
+        success: false,
+        message: 'Employee not found'
+      });
+    }
+
+    // Update user account isActive status
+    const user = await User.findOneAndUpdate(
+      { employee: req.params.id },
+      { isActive: isActive !== undefined ? isActive : false },
+      { new: true }
+    );
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User account not found for this employee'
+      });
+    }
+
+    res.json({
+      success: true,
+      message: isActive ? 'Employee account unfrozen successfully' : 'Employee account frozen successfully',
+      data: { user, employee }
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Error freezing/unfreezing employee',
+      error: error.message
+    });
+  }
+});
+
+// @route   PUT /api/employees/:id/terminate
+// @desc    Terminate employee (set status to terminated)
+// @access  Private (HR or above)
+router.put('/:id/terminate', protect, isHROrAbove, async (req, res) => {
   try {
     const employee = await Employee.findByIdAndUpdate(
       req.params.id,
@@ -266,12 +320,46 @@ router.delete('/:id', protect, isHROrAbove, async (req, res) => {
 
     res.json({
       success: true,
-      message: 'Employee deactivated successfully'
+      message: 'Employee terminated successfully',
+      data: { employee }
     });
   } catch (error) {
     res.status(500).json({
       success: false,
-      message: 'Error deactivating employee',
+      message: 'Error terminating employee',
+      error: error.message
+    });
+  }
+});
+
+// @route   DELETE /api/employees/:id
+// @desc    Delete employee permanently
+// @access  Private (HR or above)
+router.delete('/:id', protect, isHROrAbove, async (req, res) => {
+  try {
+    const employee = await Employee.findById(req.params.id);
+
+    if (!employee) {
+      return res.status(404).json({
+        success: false,
+        message: 'Employee not found'
+      });
+    }
+
+    // Delete associated user account
+    await User.findOneAndDelete({ employee: req.params.id });
+
+    // Delete employee record
+    await Employee.findByIdAndDelete(req.params.id);
+
+    res.json({
+      success: true,
+      message: 'Employee deleted successfully'
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Error deleting employee',
       error: error.message
     });
   }
