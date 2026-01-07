@@ -40,10 +40,17 @@ const attendanceSchema = new mongoose.Schema({
     default: 0
   },
   breaks: [{
-    startTime: Date,
+    startTime: {
+      type: Date,
+      required: true
+    },
     endTime: Date,
-    duration: Number,
-    reason: String
+    duration: Number, // in minutes
+    reason: {
+      type: String,
+      enum: ['washroom', 'lunch', 'cigarette', 'break'],
+      default: 'break'
+    }
   }],
   notes: {
     type: String

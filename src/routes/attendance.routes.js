@@ -235,12 +235,17 @@ router.get('/today', protect, async (req, res) => {
       date: today
     });
 
+    // Check for active break
+    const activeBreak = attendance?.breaks?.find(b => !b.endTime) || null;
+    
     res.json({
       success: true,
       data: { 
         attendance,
         isCheckedIn: !!attendance?.checkIn?.time,
-        isCheckedOut: !!attendance?.checkOut?.time
+        isCheckedOut: !!attendance?.checkOut?.time,
+        isOnBreak: !!activeBreak,
+        activeBreak
       }
     });
   } catch (error) {
@@ -280,6 +285,122 @@ router.get('/stats', protect, isHROrAbove, async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Error fetching attendance stats',
+      error: error.message
+    });
+  }
+});
+
+// @route   POST /api/attendance/break/start
+// @desc    Start a break
+// @access  Private
+router.post('/break/start', protect, async (req, res) => {
+  try {
+    const { reason } = req.body;
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const attendance = await Attendance.findOne({
+      employee: req.user.employee,
+      date: today
+    });
+
+    if (!attendance || !attendance.checkIn?.time) {
+      return res.status(400).json({
+        success: false,
+        message: 'You need to check in first'
+      });
+    }
+
+    if (attendance.checkOut?.time) {
+      return res.status(400).json({
+        success: false,
+        message: 'Cannot start break after checkout'
+      });
+    }
+
+    // Check if there's an active break (no endTime)
+    const activeBreak = attendance.breaks?.find(b => !b.endTime);
+    if (activeBreak) {
+      return res.status(400).json({
+        success: false,
+        message: 'You already have an active break. Please end it first.'
+      });
+    }
+
+    const breakStartTime = new Date();
+    attendance.breaks = attendance.breaks || [];
+    attendance.breaks.push({
+      startTime: breakStartTime,
+      reason: reason || 'break'
+    });
+    
+    await attendance.save();
+
+    res.json({
+      success: true,
+      message: 'Break started',
+      data: { 
+        attendance,
+        activeBreak: attendance.breaks[attendance.breaks.length - 1]
+      }
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Error starting break',
+      error: error.message
+    });
+  }
+});
+
+// @route   POST /api/attendance/break/end
+// @desc    End a break
+// @access  Private
+router.post('/break/end', protect, async (req, res) => {
+  try {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const attendance = await Attendance.findOne({
+      employee: req.user.employee,
+      date: today
+    });
+
+    if (!attendance || !attendance.checkIn?.time) {
+      return res.status(400).json({
+        success: false,
+        message: 'You need to check in first'
+      });
+    }
+
+    // Find active break (no endTime)
+    const activeBreakIndex = attendance.breaks?.findIndex(b => !b.endTime);
+    if (activeBreakIndex === -1 || activeBreakIndex === undefined) {
+      return res.status(400).json({
+        success: false,
+        message: 'No active break found'
+      });
+    }
+
+    const breakEndTime = new Date();
+    const activeBreak = attendance.breaks[activeBreakIndex];
+    activeBreak.endTime = breakEndTime;
+    
+    // Calculate break duration in minutes
+    const durationMs = breakEndTime.getTime() - activeBreak.startTime.getTime();
+    activeBreak.duration = Math.floor(durationMs / (1000 * 60));
+    
+    await attendance.save();
+
+    res.json({
+      success: true,
+      message: 'Break ended',
+      data: { attendance }
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Error ending break',
       error: error.message
     });
   }
