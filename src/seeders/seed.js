@@ -128,13 +128,28 @@ const seedDatabase = async () => {
     await Department.findByIdAndUpdate(departments[0]._id, { head: employees[1]._id });
     await Department.findByIdAndUpdate(departments[1]._id, { head: employees[3]._id });
 
-    // Create Users with hashed passwords
-    const hashedPassword = await bcrypt.hash('password123', 12);
-    
-    const users = await User.insertMany([
+    // Create or update Users with hashed passwords
+    // Delete existing seed users first to ensure clean state
+    await User.deleteMany({ 
+      email: { 
+        $in: [
+          'admin@company.com',
+          'hr@company.com',
+          'boss@company.com',
+          'manager@company.com',
+          'employee@company.com',
+          'ayesha@company.com',
+          'usman@company.com'
+        ]
+      }
+    });
+
+    // Create users using create() to ensure pre-save hook runs and password is hashed
+    const users = [];
+    const userData = [
       {
         email: 'admin@company.com',
-        password: hashedPassword,
+        password: 'password123', // Will be hashed by pre-save hook
         role: 'admin',
         employee: employees[0]._id,
         verificationStatus: 'approved',
@@ -142,7 +157,7 @@ const seedDatabase = async () => {
       },
       {
         email: 'hr@company.com',
-        password: hashedPassword,
+        password: 'password123',
         role: 'hr',
         employee: employees[1]._id,
         verificationStatus: 'approved',
@@ -150,7 +165,7 @@ const seedDatabase = async () => {
       },
       {
         email: 'boss@company.com',
-        password: hashedPassword,
+        password: 'password123',
         role: 'boss',
         employee: employees[2]._id,
         verificationStatus: 'approved',
@@ -158,7 +173,7 @@ const seedDatabase = async () => {
       },
       {
         email: 'manager@company.com',
-        password: hashedPassword,
+        password: 'password123',
         role: 'manager',
         employee: employees[3]._id,
         verificationStatus: 'approved',
@@ -166,7 +181,7 @@ const seedDatabase = async () => {
       },
       {
         email: 'employee@company.com',
-        password: hashedPassword,
+        password: 'password123',
         role: 'employee',
         employee: employees[4]._id,
         verificationStatus: 'approved',
@@ -174,7 +189,7 @@ const seedDatabase = async () => {
       },
       {
         email: 'ayesha@company.com',
-        password: hashedPassword,
+        password: 'password123',
         role: 'employee',
         employee: employees[5]._id,
         verificationStatus: 'approved',
@@ -182,13 +197,18 @@ const seedDatabase = async () => {
       },
       {
         email: 'usman@company.com',
-        password: hashedPassword,
+        password: 'password123',
         role: 'employee',
         employee: employees[6]._id,
         verificationStatus: 'approved',
         isActive: true
       }
-    ]);
+    ];
+
+    for (const userInfo of userData) {
+      const user = await User.create(userInfo);
+      users.push(user);
+    }
     console.log('✅ Created users');
 
     // Create sample Notices

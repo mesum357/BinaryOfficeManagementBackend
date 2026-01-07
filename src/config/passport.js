@@ -12,21 +12,37 @@ passport.use('local', new LocalStrategy(
   },
   async (email, password, done) => {
     try {
+      console.log('[Passport] Login attempt', { email: email.toLowerCase() });
+      
       const user = await User.findOne({ email: email.toLowerCase() })
         .select('+password')
         .populate('employee');
 
       if (!user) {
+        console.log('[Passport] User not found', { email: email.toLowerCase() });
         return done(null, false, { message: 'Invalid email or password' });
       }
 
+      console.log('[Passport] User found', { 
+        userId: user._id, 
+        email: user.email, 
+        role: user.role,
+        verificationStatus: user.verificationStatus,
+        isActive: user.isActive,
+        hasPassword: !!user.password
+      });
+
       const isMatch = await user.comparePassword(password);
+      console.log('[Passport] Password comparison result', { isMatch });
+      
       if (!isMatch) {
+        console.log('[Passport] Password mismatch');
         return done(null, false, { message: 'Invalid email or password' });
       }
 
       // Check verification status
       if (user.verificationStatus === 'pending') {
+        console.log('[Passport] Account pending verification');
         return done(null, false, { 
           message: 'Your account is pending verification. Please wait for admin approval.',
           code: 'PENDING_VERIFICATION'
@@ -34,6 +50,7 @@ passport.use('local', new LocalStrategy(
       }
 
       if (user.verificationStatus === 'rejected') {
+        console.log('[Passport] Account rejected');
         return done(null, false, { 
           message: `Your account registration was rejected. ${user.rejectionReason || ''}`,
           code: 'REJECTED'
@@ -41,14 +58,17 @@ passport.use('local', new LocalStrategy(
       }
 
       if (!user.isActive) {
+        console.log('[Passport] Account not active');
         return done(null, false, { 
           message: 'Your account has been deactivated. Please contact HR.',
           code: 'DEACTIVATED'
         });
       }
 
+      console.log('[Passport] Authentication successful', { userId: user._id, role: user.role });
       return done(null, user);
     } catch (error) {
+      console.error('[Passport] Authentication error', error);
       return done(error);
     }
   }

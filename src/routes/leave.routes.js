@@ -1,5 +1,6 @@
 const express = require('express');
 const Leave = require('../models/Leave');
+const LeavePolicy = require('../models/LeavePolicy');
 const Employee = require('../models/Employee');
 const { protect, isHROrAbove } = require('../middleware/auth');
 const { leaveValidator } = require('../middleware/validators');
@@ -162,6 +163,84 @@ router.get('/balance', protect, async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Error fetching leave balance',
+      error: error.message
+    });
+  }
+});
+
+// @route   GET /api/leaves/policy
+// @desc    Get all leave policies
+// @access  Private (HR or above)
+router.get('/policy', protect, isHROrAbove, async (req, res) => {
+  try {
+    console.log('[Leave Routes] Fetching leave policies...');
+    
+    // Check if LeavePolicy model is available
+    if (!LeavePolicy) {
+      console.error('[Leave Routes] LeavePolicy model not found');
+      return res.status(500).json({
+        success: false,
+        message: 'LeavePolicy model not available'
+      });
+    }
+    
+    const policies = await LeavePolicy.find({ isActive: true })
+      .populate('createdBy', 'email')
+      .populate('updatedBy', 'email')
+      .sort({ leaveType: 1 });
+
+    console.log('[Leave Routes] Found policies:', policies?.length || 0);
+    
+    res.json({
+      success: true,
+      data: { policies: policies || [] }
+    });
+  } catch (error) {
+    console.error('[Leave Routes] Error fetching leave policies:', error);
+    console.error('[Leave Routes] Error name:', error.name);
+    console.error('[Leave Routes] Error message:', error.message);
+    if (error.stack) {
+      console.error('[Leave Routes] Error stack:', error.stack);
+    }
+    
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching leave policies',
+      error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error',
+      details: process.env.NODE_ENV === 'development' ? {
+        name: error.name,
+        stack: error.stack
+      } : undefined
+    });
+  }
+});
+
+// @route   GET /api/leaves/policy/:leaveType
+// @desc    Get leave policy by type
+// @access  Private (HR or above)
+router.get('/policy/:leaveType', protect, isHROrAbove, async (req, res) => {
+  try {
+    const policy = await LeavePolicy.findOne({ 
+      leaveType: req.params.leaveType,
+      isActive: true 
+    });
+
+    if (!policy) {
+      return res.status(404).json({
+        success: false,
+        message: 'Leave policy not found'
+      });
+    }
+
+    res.json({
+      success: true,
+      data: { policy }
+    });
+  } catch (error) {
+    console.error('[Leave Routes] Error fetching leave policy:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching leave policy',
       error: error.message
     });
   }
@@ -371,6 +450,130 @@ router.put('/:id/cancel', protect, async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Error cancelling leave',
+      error: error.message
+    });
+  }
+});
+
+// @route   POST /api/leaves/policy
+// @desc    Create or update leave policy
+// @access  Private (HR or above)
+router.post('/policy', protect, isHROrAbove, async (req, res) => {
+  try {
+    const { leaveType, monthlyLimit, description, isActive } = req.body;
+
+    if (!leaveType || monthlyLimit === undefined) {
+      return res.status(400).json({
+        success: false,
+        message: 'Leave type and monthly limit are required'
+      });
+    }
+
+    // Check if policy exists
+    let policy = await LeavePolicy.findOne({ leaveType });
+
+    if (policy) {
+      // Update existing policy
+      policy.monthlyLimit = monthlyLimit;
+      policy.description = description || policy.description;
+      policy.isActive = isActive !== undefined ? isActive : policy.isActive;
+      policy.updatedBy = req.user._id;
+      await policy.save();
+    } else {
+      // Create new policy
+      policy = await LeavePolicy.create({
+        leaveType,
+        monthlyLimit,
+        description: description || '',
+        isActive: isActive !== undefined ? isActive : true,
+        createdBy: req.user._id,
+        updatedBy: req.user._id
+      });
+    }
+
+    res.json({
+      success: true,
+      message: 'Leave policy saved successfully',
+      data: { policy }
+    });
+  } catch (error) {
+    if (error.code === 11000) {
+      return res.status(400).json({
+        success: false,
+        message: 'Leave policy for this type already exists'
+      });
+    }
+    res.status(500).json({
+      success: false,
+      message: 'Error saving leave policy',
+      error: error.message
+    });
+  }
+});
+
+// @route   PUT /api/leaves/policy/:id
+// @desc    Update leave policy
+// @access  Private (HR or above)
+router.put('/policy/:id', protect, isHROrAbove, async (req, res) => {
+  try {
+    const { monthlyLimit, description, isActive } = req.body;
+
+    const policy = await LeavePolicy.findById(req.params.id);
+
+    if (!policy) {
+      return res.status(404).json({
+        success: false,
+        message: 'Leave policy not found'
+      });
+    }
+
+    if (monthlyLimit !== undefined) policy.monthlyLimit = monthlyLimit;
+    if (description !== undefined) policy.description = description;
+    if (isActive !== undefined) policy.isActive = isActive;
+    policy.updatedBy = req.user._id;
+
+    await policy.save();
+
+    res.json({
+      success: true,
+      message: 'Leave policy updated successfully',
+      data: { policy }
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Error updating leave policy',
+      error: error.message
+    });
+  }
+});
+
+// @route   DELETE /api/leaves/policy/:id
+// @desc    Delete leave policy (soft delete)
+// @access  Private (HR or above)
+router.delete('/policy/:id', protect, isHROrAbove, async (req, res) => {
+  try {
+    const policy = await LeavePolicy.findById(req.params.id);
+
+    if (!policy) {
+      return res.status(404).json({
+        success: false,
+        message: 'Leave policy not found'
+      });
+    }
+
+    policy.isActive = false;
+    policy.updatedBy = req.user._id;
+    await policy.save();
+
+    res.json({
+      success: true,
+      message: 'Leave policy deleted successfully'
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Error deleting leave policy',
       error: error.message
     });
   }

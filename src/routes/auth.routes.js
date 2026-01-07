@@ -150,8 +150,14 @@ router.post('/register', registerValidator, async (req, res) => {
 // @desc    Login user using Passport.js
 // @access  Public
 router.post('/login', (req, res, next) => {
+  console.log('[Auth Route] Login request received', { 
+    email: req.body.email, 
+    hasPassword: !!req.body.password 
+  });
+  
   passport.authenticate('local', { session: false }, (err, user, info) => {
     if (err) {
+      console.error('[Auth Route] Authentication error', err);
       return res.status(500).json({
         success: false,
         message: 'Authentication error',
@@ -160,6 +166,10 @@ router.post('/login', (req, res, next) => {
     }
 
     if (!user) {
+      console.log('[Auth Route] Authentication failed', { 
+        message: info?.message, 
+        code: info?.code 
+      });
       return res.status(401).json({
         success: false,
         message: info?.message || 'Invalid credentials',
@@ -167,14 +177,21 @@ router.post('/login', (req, res, next) => {
       });
     }
 
+    console.log('[Auth Route] Authentication successful', { 
+      userId: user._id, 
+      email: user.email, 
+      role: user.role 
+    });
+
     // Update last login
     user.lastLogin = new Date();
     user.save({ validateBeforeSave: false });
 
     // Generate token
     const token = generateToken(user._id);
+    console.log('[Auth Route] Token generated', { hasToken: !!token });
 
-    res.json({
+    const response = {
       success: true,
       message: 'Login successful',
       data: {
@@ -196,7 +213,14 @@ router.post('/login', (req, res, next) => {
           } : null
         }
       }
+    };
+    
+    console.log('[Auth Route] Sending success response', { 
+      hasToken: !!response.data.token, 
+      userRole: response.data.user.role 
     });
+    
+    res.json(response);
   })(req, res, next);
 });
 

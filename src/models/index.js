@@ -3,6 +3,7 @@ const Employee = require('./Employee');
 const Department = require('./Department');
 const Attendance = require('./Attendance');
 const Leave = require('./Leave');
+const LeavePolicy = require('./LeavePolicy');
 const Notice = require('./Notice');
 const Meeting = require('./Meeting');
 const Task = require('./Task');
@@ -16,6 +17,7 @@ module.exports = {
   Department,
   Attendance,
   Leave,
+  LeavePolicy,
   Notice,
   Meeting,
   Task,
