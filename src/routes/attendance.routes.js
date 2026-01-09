@@ -1,5 +1,6 @@
 const express = require('express');
 const Attendance = require('../models/Attendance');
+const Employee = require('../models/Employee');
 const { protect, isHROrAbove } = require('../middleware/auth');
 
 const router = express.Router();
@@ -291,6 +292,89 @@ router.get('/stats', protect, isHROrAbove, async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Error fetching attendance stats',
+      error: error.message
+    });
+  }
+});
+
+// @route   GET /api/attendance/today-presence
+// @desc    Get today's presence data with active/inactive employees
+// @access  Private (HR or above)
+router.get('/today-presence', protect, isHROrAbove, async (req, res) => {
+  try {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    // Get all employees with status 'active'
+    const activeEmployees = await Employee.find({ status: 'active' })
+      .select('_id firstName lastName employeeId department designation')
+      .populate('department', 'name')
+      .lean();
+
+    // Get today's attendance records
+    const todayAttendance = await Attendance.find({ date: today })
+      .populate('employee', 'firstName lastName employeeId department designation')
+      .select('-__v')
+      .lean();
+
+    // Separate active (clocked in but not clocked out) and inactive (not clocked in or already clocked out)
+    // Handle both populated and non-populated employee references
+    const activeEmployeeIds = new Set(
+      todayAttendance
+        .filter(att => att.checkIn?.time && !att.checkOut?.time)
+        .map(att => {
+          const empId = att.employee?._id || att.employee;
+          return empId?.toString();
+        })
+        .filter(Boolean)
+    );
+
+    const presentToday = todayAttendance.filter(att => att.checkIn?.time).length;
+
+    // Create a map for quick lookup
+    const attendanceMap = new Map();
+    todayAttendance.forEach(att => {
+      const empId = (att.employee?._id || att.employee)?.toString();
+      if (empId) {
+        attendanceMap.set(empId, att);
+      }
+    });
+
+    const activeList = activeEmployees
+      .filter(emp => activeEmployeeIds.has(emp._id.toString()))
+      .map(emp => {
+        const attendance = attendanceMap.get(emp._id.toString());
+        return {
+          ...emp,
+          checkInTime: attendance?.checkIn?.time || null
+        };
+      });
+
+    const inactiveList = activeEmployees
+      .filter(emp => !activeEmployeeIds.has(emp._id.toString()))
+      .map(emp => {
+        const attendance = attendanceMap.get(emp._id.toString());
+        return {
+          ...emp,
+          isCheckedIn: !!attendance?.checkIn?.time,
+          isCheckedOut: !!attendance?.checkOut?.time
+        };
+      });
+
+    res.json({
+      success: true,
+      data: {
+        presentToday,
+        active: activeList,
+        inactive: inactiveList,
+        totalActive: activeList.length,
+        totalInactive: inactiveList.length
+      }
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching today\'s presence data',
       error: error.message
     });
   }

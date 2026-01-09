@@ -3,7 +3,7 @@ const path = require('path');
 const Task = require('../models/Task');
 const { protect, isManagerOrAbove } = require('../middleware/auth');
 const { taskValidator } = require('../middleware/validators');
-const upload = require('../config/upload');
+const { upload } = require('../config/upload');
 
 const router = express.Router();
 

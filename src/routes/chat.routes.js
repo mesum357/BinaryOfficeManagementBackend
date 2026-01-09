@@ -3,6 +3,8 @@ const Chat = require('../models/Chat');
 const User = require('../models/User');
 const Employee = require('../models/Employee');
 const { protect } = require('../middleware/auth');
+const { chatUpload } = require('../config/upload');
+const path = require('path');
 
 const router = express.Router();
 
@@ -92,9 +94,26 @@ router.get('/', protect, async (req, res) => {
       .populate('lastMessage.sender', 'email')
       .sort({ 'lastMessage.createdAt': -1, updatedAt: -1 });
 
+    // Calculate unread count for each chat
+    const chatsWithUnread = chats.map(chat => {
+      const unreadCount = chat.messages.filter(msg => {
+        const senderId = typeof msg.sender === 'object' ? msg.sender._id.toString() : msg.sender.toString();
+        if (senderId === req.user._id.toString()) return false; // Skip own messages
+        
+        const isRead = msg.readBy.some(
+          r => r.user.toString() === req.user._id.toString()
+        );
+        return !isRead && !msg.isDeleted;
+      }).length;
+
+      const chatObj = chat.toObject();
+      chatObj.unreadCount = unreadCount;
+      return chatObj;
+    });
+
     res.json({
       success: true,
-      data: { chats }
+      data: { chats: chatsWithUnread }
     });
   } catch (error) {
     res.status(500).json({
@@ -296,6 +315,39 @@ router.post('/group', protect, async (req, res) => {
   }
 });
 
+// @route   POST /api/chat/upload
+// @desc    Upload file/image for chat
+// @access  Private
+router.post('/upload', protect, chatUpload.single('file'), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({
+        success: false,
+        message: 'No file provided'
+      });
+    }
+
+    const fileUrl = `/uploads/chat/${req.file.filename}`;
+    const isImage = /\.(jpeg|jpg|png|gif|webp)$/i.test(req.file.originalname);
+
+    res.json({
+      success: true,
+      data: {
+        name: req.file.originalname,
+        url: fileUrl,
+        type: isImage ? 'image' : 'file',
+        size: req.file.size
+      }
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Error uploading file',
+      error: error.message
+    });
+  }
+});
+
 // @route   POST /api/chat/:id/message
 // @desc    Send message
 // @access  Private
@@ -324,17 +376,36 @@ router.post('/:id/message', protect, async (req, res) => {
       });
     }
 
+    // Determine message type based on attachments
+    let finalMessageType = messageType;
+    if (attachments && attachments.length > 0) {
+      const hasImage = attachments.some(att => att.type === 'image');
+      finalMessageType = hasImage ? 'image' : 'file';
+    } else if (!content && attachments && attachments.length > 0) {
+      finalMessageType = 'file';
+    }
+
+    // Create content preview for last message
+    let lastMessageContent = content || '';
+    if (attachments && attachments.length > 0) {
+      if (finalMessageType === 'image') {
+        lastMessageContent = content || '📷 Image';
+      } else {
+        lastMessageContent = content || `📎 ${attachments[0].name}`;
+      }
+    }
+
     const message = {
       sender: req.user._id,
-      content,
-      messageType,
+      content: content || '',
+      messageType: finalMessageType,
       attachments: attachments || [],
       readBy: [{ user: req.user._id }]
     };
 
     chat.messages.push(message);
     chat.lastMessage = {
-      content,
+      content: lastMessageContent,
       sender: req.user._id,
       createdAt: new Date()
     };

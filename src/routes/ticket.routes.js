@@ -18,13 +18,34 @@ router.post('/', protect, async (req, res) => {
       });
     }
 
+    // Get employee ID - handle both populated and non-populated cases
+    let employeeId = null;
+    if (req.user.employee) {
+      employeeId = req.user.employee._id || req.user.employee;
+    }
+
+    // Check if employee exists (required for ticket creation)
+    if (!employeeId) {
+      return res.status(400).json({
+        success: false,
+        message: 'Employee record not found. Please contact HR to associate an employee profile with your account.'
+      });
+    }
+
     const ticket = await Ticket.create({
-      employee: req.user.employee?._id || req.user.employee,
+      employee: employeeId,
       subject,
       category,
       priority: priority || 'medium',
       description,
       status: 'open'
+    });
+
+    // Populate employee details for response
+    await ticket.populate({
+      path: 'employee',
+      select: 'firstName lastName employeeId department designation',
+      populate: { path: 'department', select: 'name' }
     });
 
     res.status(201).json({
@@ -33,6 +54,7 @@ router.post('/', protect, async (req, res) => {
       data: { ticket }
     });
   } catch (error) {
+    console.error('Error creating ticket:', error);
     res.status(500).json({
       success: false,
       message: 'Error creating ticket',
@@ -99,7 +121,26 @@ router.get('/', protect, async (req, res) => {
 // @access  Private
 router.get('/my', protect, async (req, res) => {
   try {
-    const tickets = await Ticket.find({ employee: req.user.employee?._id || req.user.employee })
+    // Get employee ID - handle both populated and non-populated cases
+    let employeeId = null;
+    if (req.user.employee) {
+      employeeId = req.user.employee._id || req.user.employee;
+    }
+
+    // If no employee record, return empty array
+    if (!employeeId) {
+      return res.json({
+        success: true,
+        data: { tickets: [] }
+      });
+    }
+
+    const tickets = await Ticket.find({ employee: employeeId })
+      .populate('employee', 'firstName lastName employeeId department designation')
+      .populate({
+        path: 'employee',
+        populate: { path: 'department', select: 'name' }
+      })
       .select('-__v')
       .sort({ createdAt: -1 })
       .lean();
@@ -109,6 +150,7 @@ router.get('/my', protect, async (req, res) => {
       data: { tickets }
     });
   } catch (error) {
+    console.error('Error fetching user tickets:', error);
     res.status(500).json({
       success: false,
       message: 'Error fetching tickets',

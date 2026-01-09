@@ -13,8 +13,13 @@ if (!fs.existsSync(tasksDir)) {
   fs.mkdirSync(tasksDir, { recursive: true });
 }
 
-// Configure storage
-const storage = multer.diskStorage({
+const chatDir = path.join(uploadsDir, 'chat');
+if (!fs.existsSync(chatDir)) {
+  fs.mkdirSync(chatDir, { recursive: true });
+}
+
+// Configure storage for tasks
+const taskStorage = multer.diskStorage({
   destination: (req, file, cb) => {
     cb(null, tasksDir);
   },
@@ -24,8 +29,19 @@ const storage = multer.diskStorage({
   }
 });
 
-// File filter for images only
-const fileFilter = (req, file, cb) => {
+// Configure storage for chat files
+const chatStorage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    cb(null, chatDir);
+  },
+  filename: (req, file, cb) => {
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    cb(null, `chat-${uniqueSuffix}${path.extname(file.originalname)}`);
+  }
+});
+
+// File filter for images only (for tasks)
+const imageFileFilter = (req, file, cb) => {
   const allowedTypes = /jpeg|jpg|png|gif|webp/;
   const extname = allowedTypes.test(path.extname(file.originalname).toLowerCase());
   const mimetype = allowedTypes.test(file.mimetype);
@@ -37,13 +53,41 @@ const fileFilter = (req, file, cb) => {
   }
 };
 
+// File filter for chat (images and documents)
+const chatFileFilter = (req, file, cb) => {
+  const allowedImageTypes = /jpeg|jpg|png|gif|webp/;
+  const allowedDocTypes = /pdf|doc|docx|xls|xlsx|ppt|pptx|txt|csv/;
+  const extname = path.extname(file.originalname).toLowerCase();
+  const mimetype = file.mimetype;
+
+  const isImage = allowedImageTypes.test(extname) && allowedImageTypes.test(mimetype);
+  const isDocument = allowedDocTypes.test(extname) || mimetype.includes('application/pdf') || 
+                     mimetype.includes('application/msword') || mimetype.includes('application/vnd.openxmlformats-officedocument');
+
+  if (isImage || isDocument) {
+    return cb(null, true);
+  } else {
+    cb(new Error('Only image and document files are allowed!'));
+  }
+};
+
+// Upload middleware for tasks (images only)
 const upload = multer({
-  storage: storage,
+  storage: taskStorage,
   limits: {
     fileSize: 5 * 1024 * 1024 // 5MB limit
   },
-  fileFilter: fileFilter
+  fileFilter: imageFileFilter
 });
 
-module.exports = upload;
+// Upload middleware for chat (images and documents)
+const chatUpload = multer({
+  storage: chatStorage,
+  limits: {
+    fileSize: 10 * 1024 * 1024 // 10MB limit
+  },
+  fileFilter: chatFileFilter
+});
+
+module.exports = { upload, chatUpload };
 
