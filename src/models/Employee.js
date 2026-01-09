@@ -98,10 +98,8 @@ const employeeSchema = new mongoose.Schema({
   toObject: { virtuals: true }
 });
 
-// Indexes for faster queries
+// Indexes for faster queries (email and employeeId already have unique indexes via unique: true)
 employeeSchema.index({ status: 1, department: 1 });
-employeeSchema.index({ email: 1 });
-employeeSchema.index({ employeeId: 1 });
 
 // Virtual for full name
 employeeSchema.virtual('fullName').get(function() {
