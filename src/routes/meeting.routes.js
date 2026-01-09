@@ -21,10 +21,11 @@ router.get('/', protect, async (req, res) => {
     const query = {};
 
     // Filter meetings where user is organizer or attendee
-    if (!['boss', 'admin'].includes(req.user.role)) {
+    if (!['boss', 'admin', 'hr'].includes(req.user.role)) {
+      const userEmployeeId = req.user.employee?._id || req.user.employee;
       query.$or = [
         { organizer: req.user._id },
-        { 'attendees.employee': req.user.employee }
+        { 'attendees.employee': userEmployeeId }
       ];
     }
 
@@ -77,10 +78,11 @@ router.get('/upcoming', protect, async (req, res) => {
       status: { $in: ['scheduled', 'in-progress'] }
     };
 
-    if (!['boss', 'admin'].includes(req.user.role)) {
+    if (!['boss', 'admin', 'hr'].includes(req.user.role)) {
+      const userEmployeeId = req.user.employee?._id || req.user.employee;
       query.$or = [
         { organizer: req.user._id },
-        { 'attendees.employee': req.user.employee }
+        { 'attendees.employee': userEmployeeId }
       ];
     }
 
@@ -118,10 +120,11 @@ router.get('/today', protect, async (req, res) => {
       startTime: { $gte: startOfDay, $lte: endOfDay }
     };
 
-    if (!['boss', 'admin'].includes(req.user.role)) {
+    if (!['boss', 'admin', 'hr'].includes(req.user.role)) {
+      const userEmployeeId = req.user.employee?._id || req.user.employee;
       query.$or = [
         { organizer: req.user._id },
-        { 'attendees.employee': req.user.employee }
+        { 'attendees.employee': userEmployeeId }
       ];
     }
 
@@ -271,8 +274,9 @@ router.put('/:id/respond', protect, async (req, res) => {
       });
     }
 
+    const userEmployeeId = req.user.employee?._id?.toString() || req.user.employee?.toString();
     const attendeeIndex = meeting.attendees.findIndex(
-      a => a.employee.toString() === req.user.employee.toString()
+      a => a.employee.toString() === userEmployeeId
     );
 
     if (attendeeIndex === -1) {
@@ -301,7 +305,7 @@ router.put('/:id/respond', protect, async (req, res) => {
 });
 
 // @route   DELETE /api/meetings/:id
-// @desc    Cancel meeting
+// @desc    Delete meeting
 // @access  Private (Organizer or Manager+)
 router.delete('/:id', protect, async (req, res) => {
   try {
@@ -320,21 +324,20 @@ router.delete('/:id', protect, async (req, res) => {
     if (!isOrganizer && !isManager) {
       return res.status(403).json({
         success: false,
-        message: 'Not authorized to cancel this meeting'
+        message: 'Not authorized to delete this meeting'
       });
     }
 
-    meeting.status = 'cancelled';
-    await meeting.save();
+    await Meeting.findByIdAndDelete(req.params.id);
 
     res.json({
       success: true,
-      message: 'Meeting cancelled successfully'
+      message: 'Meeting deleted successfully'
     });
   } catch (error) {
     res.status(500).json({
       success: false,
-      message: 'Error cancelling meeting',
+      message: 'Error deleting meeting',
       error: error.message
     });
   }

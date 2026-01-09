@@ -7,6 +7,7 @@ const LeavePolicy = require('./LeavePolicy');
 const Notice = require('./Notice');
 const Meeting = require('./Meeting');
 const Task = require('./Task');
+const Ticket = require('./Ticket');
 const Chat = require('./Chat');
 const Recruitment = require('./Recruitment');
 const MessageRequest = require('./MessageRequest');
@@ -21,6 +22,7 @@ module.exports = {
   Notice,
   Meeting,
   Task,
+  Ticket,
   Chat,
   Recruitment,
   MessageRequest
