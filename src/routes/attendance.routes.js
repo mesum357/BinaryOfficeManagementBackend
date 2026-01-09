@@ -38,7 +38,8 @@ router.get('/', protect, async (req, res) => {
       .populate('employee', 'firstName lastName employeeId department')
       .skip((page - 1) * limit)
       .limit(parseInt(limit))
-      .sort({ date: -1 });
+      .sort({ date: -1 })
+      .lean();
 
     const total = await Attendance.countDocuments(query);
 
@@ -84,7 +85,10 @@ router.get('/my', protect, async (req, res) => {
     const attendance = await Attendance.find({
       employee: req.user.employee,
       date: { $gte: startDate, $lte: endDate }
-    }).sort({ date: -1 });
+    })
+      .select('-__v')
+      .sort({ date: -1 })
+      .lean();
 
     // Calculate summary
     const summary = {
@@ -233,7 +237,9 @@ router.get('/today', protect, async (req, res) => {
     const attendance = await Attendance.findOne({
       employee: req.user.employee,
       date: today
-    });
+    })
+      .select('-__v')
+      .lean();
 
     // Check for active break
     const activeBreak = attendance?.breaks?.find(b => !b.endTime) || null;

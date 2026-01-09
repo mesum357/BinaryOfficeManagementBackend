@@ -41,7 +41,8 @@ router.get('/', protect, async (req, res) => {
       .populate('attendees.employee', 'firstName lastName employeeId')
       .skip((page - 1) * limit)
       .limit(parseInt(limit))
-      .sort({ startTime: 1 });
+      .sort({ startTime: 1 })
+      .lean();
 
     const total = await Meeting.countDocuments(query);
 
@@ -89,8 +90,10 @@ router.get('/upcoming', protect, async (req, res) => {
     const meetings = await Meeting.find(query)
       .populate('organizer', 'email')
       .populate('attendees.employee', 'firstName lastName')
+      .select('-__v')
       .sort({ startTime: 1 })
-      .limit(10);
+      .limit(10)
+      .lean();
 
     res.json({
       success: true,
@@ -131,7 +134,9 @@ router.get('/today', protect, async (req, res) => {
     const meetings = await Meeting.find(query)
       .populate('organizer', 'email')
       .populate('attendees.employee', 'firstName lastName')
-      .sort({ startTime: 1 });
+      .select('-__v')
+      .sort({ startTime: 1 })
+      .lean();
 
     res.json({
       success: true,

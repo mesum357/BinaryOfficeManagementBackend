@@ -41,7 +41,8 @@ router.get('/', protect, async (req, res) => {
       .populate('reviewedBy', 'email')
       .skip((page - 1) * limit)
       .limit(parseInt(limit))
-      .sort({ createdAt: -1 });
+      .sort({ createdAt: -1 })
+      .lean();
 
     const total = await Leave.countDocuments(query);
 
@@ -72,7 +73,9 @@ router.get('/', protect, async (req, res) => {
 router.get('/my', protect, async (req, res) => {
   try {
     const leaves = await Leave.find({ employee: req.user.employee })
-      .sort({ createdAt: -1 });
+      .select('-__v')
+      .sort({ createdAt: -1 })
+      .lean();
 
     const employee = await Employee.findById(req.user.employee)
       .select('leaveBalance');
@@ -104,7 +107,9 @@ router.get('/pending', protect, isHROrAbove, async (req, res) => {
         path: 'employee',
         populate: { path: 'department', select: 'name' }
       })
-      .sort({ createdAt: 1 });
+      .select('-__v')
+      .sort({ createdAt: 1 })
+      .lean();
 
     res.json({
       success: true,

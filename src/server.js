@@ -1,6 +1,7 @@
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
+const compression = require('compression');
 const http = require('http');
 const path = require('path');
 const { Server } = require('socket.io');
@@ -40,6 +41,7 @@ const io = new Server(server, {
 });
 
 // Middleware
+app.use(compression()); // Compress responses for faster transfer
 app.use(cors({
   origin: [
     process.env.EMPLOYEE_PORTAL_URL || 'http://localhost:5173',
@@ -49,8 +51,8 @@ app.use(cors({
   ],
   credentials: true
 }));
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
 // Serve uploaded files
 app.use('/uploads', express.static(path.join(__dirname, '../uploads')));

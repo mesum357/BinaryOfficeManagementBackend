@@ -82,7 +82,9 @@ router.get('/my', protect, async (req, res) => {
     const tasks = await Task.find(query)
       .populate('assignedBy', 'email')
       .populate('department', 'name')
-      .sort({ dueDate: 1, priority: -1 });
+      .select('-__v')
+      .sort({ dueDate: 1, priority: -1 })
+      .lean();
 
     // Group by status
     const tasksByStatus = {

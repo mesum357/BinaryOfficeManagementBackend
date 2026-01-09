@@ -81,9 +81,11 @@ const meetingSchema = new mongoose.Schema({
   timestamps: true
 });
 
-// Index for faster queries
+// Indexes for faster queries
 meetingSchema.index({ startTime: 1 });
 meetingSchema.index({ organizer: 1, startTime: -1 });
+meetingSchema.index({ status: 1, startTime: 1 });
+meetingSchema.index({ 'attendees.employee': 1, startTime: 1 });
 
 module.exports = mongoose.model('Meeting', meetingSchema);
 

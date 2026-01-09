@@ -52,7 +52,8 @@ router.get('/', protect, async (req, res) => {
       .populate('manager', 'firstName lastName employeeId')
       .skip((page - 1) * limit)
       .limit(parseInt(limit))
-      .sort(sortOptions);
+      .sort(sortOptions)
+      .lean();
 
     const total = await Employee.countDocuments(query);
 

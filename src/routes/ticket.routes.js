@@ -68,7 +68,8 @@ router.get('/', protect, async (req, res) => {
       })
       .sort({ createdAt: -1 })
       .skip((page - 1) * limit)
-      .limit(parseInt(limit));
+      .limit(parseInt(limit))
+      .lean();
 
     const total = await Ticket.countDocuments(query);
 
@@ -99,7 +100,9 @@ router.get('/', protect, async (req, res) => {
 router.get('/my', protect, async (req, res) => {
   try {
     const tickets = await Ticket.find({ employee: req.user.employee?._id || req.user.employee })
-      .sort({ createdAt: -1 });
+      .select('-__v')
+      .sort({ createdAt: -1 })
+      .lean();
 
     res.json({
       success: true,

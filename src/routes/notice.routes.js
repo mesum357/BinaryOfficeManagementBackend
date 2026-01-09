@@ -41,7 +41,8 @@ router.get('/', protect, async (req, res) => {
       .populate('departments', 'name')
       .skip((page - 1) * limit)
       .limit(parseInt(limit))
-      .sort({ isPinned: -1, publishedAt: -1 });
+      .sort({ isPinned: -1, publishedAt: -1 })
+      .lean();
 
     const total = await Notice.countDocuments(query);
 
@@ -79,8 +80,10 @@ router.get('/recent', protect, async (req, res) => {
       ]
     })
       .populate('publishedBy', 'email')
+      .select('-__v')
       .sort({ isPinned: -1, publishedAt: -1 })
-      .limit(10);
+      .limit(10)
+      .lean();
 
     res.json({
       success: true,
