@@ -125,7 +125,7 @@ router.get('/pending', protect, isHROrAbove, async (req, res) => {
 });
 
 // @route   GET /api/leaves/balance
-// @desc    Get leave balance
+// @desc    Get leave balance based on HR policies
 // @access  Private
 router.get('/balance', protect, async (req, res) => {
   try {
@@ -139,14 +139,26 @@ router.get('/balance', protect, async (req, res) => {
       });
     }
 
-    // Calculate used leaves this year
-    const startOfYear = new Date(new Date().getFullYear(), 0, 1);
+    // Fetch all active leave policies set by HR
+    const policies = await LeavePolicy.find({ isActive: true }).lean();
+    
+    // Create a map of leave types to monthly limits
+    const policyMap = {};
+    policies.forEach(policy => {
+      policyMap[policy.leaveType] = policy.monthlyLimit || 0;
+    });
+
+    // Calculate used leaves for the current month
+    const now = new Date();
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
+    
     const usedLeaves = await Leave.aggregate([
       {
         $match: {
           employee: req.user.employee,
           status: 'approved',
-          startDate: { $gte: startOfYear }
+          startDate: { $gte: startOfMonth, $lte: endOfMonth }
         }
       },
       {
@@ -157,14 +169,45 @@ router.get('/balance', protect, async (req, res) => {
       }
     ]);
 
+    // Create a map of used leaves by type
+    const usedMap = {};
+    usedLeaves.forEach(item => {
+      usedMap[item._id] = item.totalDays;
+    });
+
+    // Build balance object based on policies
+    const balance = {};
+    const used = {};
+    const remaining = {};
+    const totals = {};
+
+    // Map common leave types
+    const leaveTypes = ['annual', 'sick', 'casual', 'maternity', 'paternity', 'unpaid', 'other'];
+    
+    leaveTypes.forEach(type => {
+      const monthlyLimit = policyMap[type] || 0;
+      const usedDays = usedMap[type] || 0;
+      const remainingDays = Math.max(0, monthlyLimit - usedDays);
+      
+      // For backward compatibility, maintain the old structure but use policy values
+      balance[type] = monthlyLimit; // This represents the total/limit
+      used[type] = usedDays;
+      remaining[type] = remainingDays;
+      totals[type] = monthlyLimit;
+    });
+
     res.json({
       success: true,
       data: { 
-        balance: employee.leaveBalance,
-        used: usedLeaves
+        balance: balance, // Total/limit from policies
+        used: used, // Used this month
+        remaining: remaining, // Remaining this month
+        totals: totals, // Same as balance for backward compatibility
+        policies: policies.map(p => ({ leaveType: p.leaveType, monthlyLimit: p.monthlyLimit }))
       }
     });
   } catch (error) {
+    console.error('Error fetching leave balance:', error);
     res.status(500).json({
       success: false,
       message: 'Error fetching leave balance',
