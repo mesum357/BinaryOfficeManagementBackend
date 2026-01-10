@@ -1,5 +1,7 @@
 const express = require('express');
+const mongoose = require('mongoose');
 const Ticket = require('../models/Ticket');
+const Employee = require('../models/Employee');
 const { protect, isHROrAbove } = require('../middleware/auth');
 
 const router = express.Router();
@@ -21,7 +23,18 @@ router.post('/', protect, async (req, res) => {
     // Get employee ID - handle both populated and non-populated cases
     let employeeId = null;
     if (req.user.employee) {
+      // If populated, use _id; if not populated, use the ObjectId directly
       employeeId = req.user.employee._id || req.user.employee;
+      // Convert to ObjectId if it's a string
+      if (typeof employeeId === 'string') {
+        if (!mongoose.Types.ObjectId.isValid(employeeId)) {
+          return res.status(400).json({
+            success: false,
+            message: 'Invalid employee ID format'
+          });
+        }
+        employeeId = new mongoose.Types.ObjectId(employeeId);
+      }
     }
 
     // Check if employee exists (required for ticket creation)
@@ -32,14 +45,92 @@ router.post('/', protect, async (req, res) => {
       });
     }
 
-    const ticket = await Ticket.create({
-      employee: employeeId,
-      subject,
-      category,
-      priority: priority || 'medium',
-      description,
-      status: 'open'
-    });
+    // Validate that employeeId is a valid ObjectId (double-check)
+    if (!mongoose.Types.ObjectId.isValid(employeeId)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid employee ID format'
+      });
+    }
+
+    // Verify employee exists in database
+    const employeeExists = await Employee.findById(employeeId);
+    if (!employeeExists) {
+      return res.status(400).json({
+        success: false,
+        message: 'Employee record not found in database'
+      });
+    }
+
+    // Validate category
+    const validCategories = ['IT Support', 'HR Inquiry', 'Payroll Issue', 'Leave Request', 'Facilities', 'Equipment Request', 'Access & Permissions', 'Other'];
+    if (!validCategories.includes(category)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid category'
+      });
+    }
+
+    // Validate priority
+    const validPriorities = ['low', 'medium', 'high', 'urgent'];
+    const finalPriority = priority || 'medium';
+    if (!validPriorities.includes(finalPriority)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid priority'
+      });
+    }
+
+    // Generate ticket number with retry logic for race conditions
+    let ticket;
+    let attempts = 0;
+    const maxAttempts = 5;
+    
+    while (attempts < maxAttempts) {
+      try {
+        const lastTicket = await Ticket.findOne().sort({ ticketNumber: -1 }).lean();
+        let ticketNum = 1;
+        
+        if (lastTicket && lastTicket.ticketNumber) {
+          const lastNum = parseInt(lastTicket.ticketNumber.replace('TKT-', ''), 10);
+          if (!isNaN(lastNum) && lastNum > 0) {
+            ticketNum = lastNum + 1 + attempts; // Add attempts to avoid collisions
+          }
+        } else {
+          ticketNum = 1 + attempts;
+        }
+        
+        const ticketNumber = `TKT-${String(ticketNum).padStart(6, '0')}`;
+
+        ticket = await Ticket.create({
+          ticketNumber,
+          employee: employeeId,
+          subject: subject.trim(),
+          category,
+          priority: finalPriority,
+          description: description.trim(),
+          status: 'open'
+        });
+        
+        // Successfully created, break out of retry loop
+        break;
+      } catch (createError) {
+        attempts++;
+        // If it's a duplicate key error (E11000), retry with different number
+        if (createError.code === 11000 && attempts < maxAttempts) {
+          continue;
+        }
+        // For other errors or max attempts reached, throw
+        throw createError;
+      }
+    }
+    
+    if (!ticket) {
+      return res.status(500).json({
+        success: false,
+        message: 'Failed to create ticket after multiple attempts'
+      });
+    }
 
     // Populate employee details for response
     await ticket.populate({
@@ -55,10 +146,28 @@ router.post('/', protect, async (req, res) => {
     });
   } catch (error) {
     console.error('Error creating ticket:', error);
+    console.error('Error stack:', error.stack);
+    
+    // Handle specific MongoDB errors
+    if (error.name === 'ValidationError') {
+      return res.status(400).json({
+        success: false,
+        message: 'Validation error',
+        error: Object.values(error.errors).map(err => err.message).join(', ')
+      });
+    }
+    
+    if (error.code === 11000) {
+      return res.status(400).json({
+        success: false,
+        message: 'Duplicate ticket number. Please try again.'
+      });
+    }
+
     res.status(500).json({
       success: false,
       message: 'Error creating ticket',
-      error: error.message
+      error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
     });
   }
 });

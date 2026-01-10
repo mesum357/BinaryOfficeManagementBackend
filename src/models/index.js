@@ -11,6 +11,7 @@ const Ticket = require('./Ticket');
 const Chat = require('./Chat');
 const Recruitment = require('./Recruitment');
 const MessageRequest = require('./MessageRequest');
+const Report = require('./Report');
 
 module.exports = {
   User,
@@ -25,6 +26,7 @@ module.exports = {
   Ticket,
   Chat,
   Recruitment,
-  MessageRequest
+  MessageRequest,
+  Report
 };
 

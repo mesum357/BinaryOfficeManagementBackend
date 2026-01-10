@@ -59,21 +59,29 @@ const ticketSchema = new mongoose.Schema({
 
 // Generate ticket number before saving
 ticketSchema.pre('save', async function(next) {
-  if (!this.ticketNumber) {
-    // Find the highest ticket number
-    const lastTicket = await mongoose.model('Ticket').findOne().sort({ ticketNumber: -1 });
-    let ticketNum = 1;
-    
-    if (lastTicket && lastTicket.ticketNumber) {
-      const lastNum = parseInt(lastTicket.ticketNumber.replace('TKT-', ''), 10);
-      if (!isNaN(lastNum)) {
-        ticketNum = lastNum + 1;
+  try {
+    if (!this.ticketNumber) {
+      // Use this.constructor to avoid circular dependency issues
+      const TicketModel = this.constructor;
+      
+      // Find the highest ticket number
+      const lastTicket = await TicketModel.findOne().sort({ ticketNumber: -1 }).lean();
+      let ticketNum = 1;
+      
+      if (lastTicket && lastTicket.ticketNumber) {
+        const lastNum = parseInt(lastTicket.ticketNumber.replace('TKT-', ''), 10);
+        if (!isNaN(lastNum) && lastNum > 0) {
+          ticketNum = lastNum + 1;
+        }
       }
+      
+      this.ticketNumber = `TKT-${String(ticketNum).padStart(6, '0')}`;
     }
-    
-    this.ticketNumber = `TKT-${String(ticketNum).padStart(6, '0')}`;
+    next();
+  } catch (error) {
+    console.error('Error generating ticket number:', error);
+    next(error);
   }
-  next();
 });
 
 // Index for faster queries
