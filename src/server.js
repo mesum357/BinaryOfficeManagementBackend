@@ -23,6 +23,7 @@ const messageRequestRoutes = require('./routes/messageRequest.routes');
 const reportRoutes = require('./routes/report.routes');
 const recruitmentRoutes = require('./routes/recruitment.routes');
 const departmentRoutes = require('./routes/department.routes');
+const settingsRoutes = require('./routes/settings.routes');
 
 const app = express();
 const server = http.createServer(app);
@@ -102,6 +103,7 @@ app.use('/api/message-requests', messageRequestRoutes);
 app.use('/api/reports', reportRoutes);
 app.use('/api/recruitment', recruitmentRoutes);
 app.use('/api/departments', departmentRoutes);
+app.use('/api/settings', settingsRoutes);
 
 // Health check route
 app.get('/api/health', (req, res) => {

@@ -12,6 +12,7 @@ const Chat = require('./Chat');
 const Recruitment = require('./Recruitment');
 const MessageRequest = require('./MessageRequest');
 const Report = require('./Report');
+const Settings = require('./Settings');
 
 module.exports = {
   User,
@@ -27,6 +28,7 @@ module.exports = {
   Chat,
   Recruitment,
   MessageRequest,
-  Report
+  Report,
+  Settings
 };
 
