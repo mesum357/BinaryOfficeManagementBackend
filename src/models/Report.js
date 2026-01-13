@@ -12,8 +12,9 @@ const reportSchema = new mongoose.Schema({
     default: Date.now
   },
   headset: {
-    type: Boolean,
-    default: false
+    type: Number,
+    default: 0,
+    min: 0
   },
   sales: {
     type: Number,

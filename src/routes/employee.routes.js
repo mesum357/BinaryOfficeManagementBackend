@@ -38,9 +38,11 @@ router.get('/', protect, async (req, res) => {
     sortOptions[sortBy] = sortOrder === 'asc' ? 1 : -1;
 
     // If hasAccount is true, filter to only employees with verified user accounts
+    // Exclude HR, Boss, Manager, and Admin roles - only show regular employees
     if (hasAccount === 'true') {
       const usersWithAccounts = await User.find({
-        verificationStatus: 'approved'
+        verificationStatus: 'approved',
+        role: 'employee' // Only show regular employees, not HR/Boss/Manager/Admin
       }).select('employee');
       
       const verifiedEmployeeIds = usersWithAccounts.map(u => u.employee.toString());

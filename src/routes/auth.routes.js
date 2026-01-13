@@ -505,9 +505,61 @@ const { generateAuthenticationOptions, verifyAuthenticationResponse } = require(
 const { isoBase64URL, isoUint8Array } = require('@simplewebauthn/server/helpers');
 
 // RP ID - should match your domain (localhost for dev, your domain for production)
-const rpID = process.env.WEBAUTHN_RP_ID || 'localhost';
 const rpName = process.env.WEBAUTHN_RP_NAME || 'Office Management System';
-const origin = process.env.WEBAUTHN_ORIGIN || (process.env.NODE_ENV === 'production' ? `https://${rpID}` : `http://${rpID}:5173`);
+
+// Helper function to get RP ID from request origin
+const getRPID = (req) => {
+  // Check if RP ID is set in environment
+  if (process.env.WEBAUTHN_RP_ID) {
+    return process.env.WEBAUTHN_RP_ID;
+  }
+  
+  // Get origin from request headers
+  const origin = req.headers.origin || req.headers.referer;
+  
+  if (origin) {
+    try {
+      const url = new URL(origin);
+      const hostname = url.hostname;
+      
+      // For localhost, use localhost
+      if (hostname === 'localhost' || hostname === '127.0.0.1') {
+        return 'localhost';
+      }
+      
+      // For production, extract domain (remove port and www)
+      // e.g., https://employee-website-dkq3.onrender.com -> employee-website-dkq3.onrender.com
+      return hostname.replace(/^www\./, '');
+    } catch (e) {
+      console.error('Error parsing origin:', e);
+    }
+  }
+  
+  // Fallback to localhost for development
+  return 'localhost';
+};
+
+// Helper function to get origin from request
+const getOrigin = (req) => {
+  if (process.env.WEBAUTHN_ORIGIN) {
+    return process.env.WEBAUTHN_ORIGIN;
+  }
+  
+  const origin = req.headers.origin || req.headers.referer;
+  if (origin) {
+    try {
+      const url = new URL(origin);
+      return url.origin;
+    } catch (e) {
+      console.error('Error parsing origin:', e);
+    }
+  }
+  
+  // Fallback
+  return process.env.NODE_ENV === 'production' 
+    ? 'https://localhost' 
+    : 'http://localhost:5173';
+};
 
 // @route   POST /api/auth/webauthn/register/start
 // @desc    Start WebAuthn registration process
@@ -523,6 +575,10 @@ router.post('/webauthn/register/start', protect, async (req, res) => {
       });
     }
 
+    // Get RP ID and origin from request
+    const rpID = getRPID(req);
+    const origin = getOrigin(req);
+
     // Exclude existing credential IDs (convert from base64url to buffer)
     const excludeCredentials = (user.webauthnCredentials || []).map(cred => ({
       id: isoBase64URL.toBuffer(cred.credentialId),
@@ -533,6 +589,7 @@ router.post('/webauthn/register/start', protect, async (req, res) => {
     const registrationOpts = {
       rpName,
       rpID,
+      origin,
       userName: user.email,
       userDisplayName: user.email,
       timeout: 60000,
@@ -606,23 +663,23 @@ router.post('/webauthn/register/complete', protect, async (req, res) => {
       });
     }
 
-    // Get the actual origin from the request
-    const requestOrigin = req.headers.origin || origin;
+    // Get the actual origin and RP ID from the request
+    const requestOrigin = getOrigin(req);
+    const requestRPID = getRPID(req);
     
     console.log('Verifying credential for user:', user._id);
     console.log('Credential structure:', JSON.stringify(credential, null, 2).substring(0, 500));
     console.log('Expected challenge:', user.webauthnRegistrationChallenge);
     console.log('Request Origin:', requestOrigin);
-    console.log('Configured Origin:', origin);
-    console.log('RP ID:', rpID);
+    console.log('RP ID:', requestRPID);
 
     let verification;
     try {
       verification = await verifyRegistrationResponse({
         response: credential,
         expectedChallenge: user.webauthnRegistrationChallenge,
-        expectedOrigin: requestOrigin, // Use request origin instead of configured
-        expectedRPID: rpID,
+        expectedOrigin: requestOrigin,
+        expectedRPID: requestRPID,
         requireUserVerification: true
       });
       console.log('Verification result:', verification);
@@ -865,8 +922,11 @@ router.post('/webauthn/login/start', async (req, res) => {
     // For usernameless authentication, we don't need email
     // The browser will find the credential using resident keys
 
+    // Get RP ID from request
+    const requestRPID = getRPID(req);
+
     const options = await generateAuthenticationOptions({
-      rpID,
+      rpID: requestRPID,
       timeout: 60000,
       // Don't specify allowCredentials - this enables usernameless authentication
       // The browser will find the resident key automatically
@@ -1069,8 +1129,9 @@ router.post('/webauthn/login/complete', async (req, res) => {
     
     console.log('[AUTH ROUTES] Step 4.1: Converted to buffers - credentialID type:', credentialID.constructor.name, 'length:', credentialID.length, 'publicKey type:', credentialPublicKey.constructor.name, 'length:', credentialPublicKey.length, 'counter:', credentialCounter, 'counterType:', typeof credentialCounter);
 
-    // Get request origin for verification
-    const requestOrigin = req.headers.origin || origin;
+    // Get request origin and RP ID for verification
+    const requestOrigin = getOrigin(req);
+    const requestRPID = getRPID(req);
 
     console.log('[AUTH ROUTES] Step 5: Extracting challenge from credential response');
     // Extract challenge from the credential response for verification
@@ -1138,7 +1199,7 @@ router.post('/webauthn/login/complete', async (req, res) => {
       hasResponse: !!credential,
       hasExpectedChallenge: !!expectedChallenge,
       expectedOrigin: requestOrigin,
-      expectedRPID: rpID,
+      expectedRPID: requestRPID,
       hasAuthenticator: !!authenticatorObj,
       authenticatorKeys: Object.keys(authenticatorObj)
     });
@@ -1147,7 +1208,7 @@ router.post('/webauthn/login/complete', async (req, res) => {
       response: credential,
       expectedChallenge: expectedChallenge,
       expectedOrigin: requestOrigin,
-      expectedRPID: rpID,
+      expectedRPID: requestRPID,
       credential: authenticatorObj,  // Fixed: parameter name should be 'credential', not 'authenticator'
       requireUserVerification: true
     });

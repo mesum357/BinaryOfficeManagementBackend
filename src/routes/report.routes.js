@@ -39,7 +39,7 @@ router.post('/', protect, async (req, res) => {
 
     if (existingReport) {
       // Update existing report
-      existingReport.headset = headset || false;
+      existingReport.headset = headset || 0;
       existingReport.sales = sales || 0;
       await existingReport.save();
 
@@ -60,7 +60,7 @@ router.post('/', protect, async (req, res) => {
     const report = await Report.create({
       employee: employeeId,
       date: today,
-      headset: headset || false,
+      headset: headset || 0,
       sales: sales || 0
     });
 
@@ -152,6 +152,114 @@ router.get('/my', protect, async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Error fetching reports',
+      error: error.message
+    });
+  }
+});
+
+// @route   GET /api/reports/my/weekly
+// @desc    Get current user's weekly reports
+// @access  Private
+router.get('/my/weekly', protect, async (req, res) => {
+  try {
+    // Get employee ID
+    let employeeId = null;
+    if (req.user.employee) {
+      employeeId = req.user.employee._id || req.user.employee;
+    }
+
+    if (!employeeId) {
+      return res.json({
+        success: true,
+        data: { reports: [] }
+      });
+    }
+
+    // Get start of current week (Sunday)
+    const now = new Date();
+    const startOfWeek = new Date(now);
+    startOfWeek.setDate(now.getDate() - now.getDay());
+    startOfWeek.setHours(0, 0, 0, 0);
+
+    // Get end of current week (Saturday)
+    const endOfWeek = new Date(startOfWeek);
+    endOfWeek.setDate(startOfWeek.getDate() + 6);
+    endOfWeek.setHours(23, 59, 59, 999);
+
+    const reports = await Report.find({
+      employee: employeeId,
+      date: {
+        $gte: startOfWeek,
+        $lte: endOfWeek
+      }
+    })
+      .populate('employee', 'firstName lastName employeeId department')
+      .select('-__v')
+      .sort({ date: -1 })
+      .lean();
+
+    res.json({
+      success: true,
+      data: { reports }
+    });
+  } catch (error) {
+    console.error('Error fetching weekly reports:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching weekly reports',
+      error: error.message
+    });
+  }
+});
+
+// @route   GET /api/reports/my/monthly
+// @desc    Get current user's monthly reports
+// @access  Private
+router.get('/my/monthly', protect, async (req, res) => {
+  try {
+    // Get employee ID
+    let employeeId = null;
+    if (req.user.employee) {
+      employeeId = req.user.employee._id || req.user.employee;
+    }
+
+    if (!employeeId) {
+      return res.json({
+        success: true,
+        data: { reports: [] }
+      });
+    }
+
+    // Get start of current month
+    const now = new Date();
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    startOfMonth.setHours(0, 0, 0, 0);
+
+    // Get end of current month
+    const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+    endOfMonth.setHours(23, 59, 59, 999);
+
+    const reports = await Report.find({
+      employee: employeeId,
+      date: {
+        $gte: startOfMonth,
+        $lte: endOfMonth
+      }
+    })
+      .populate('employee', 'firstName lastName employeeId department')
+      .select('-__v')
+      .sort({ date: -1 })
+      .lean();
+
+    res.json({
+      success: true,
+      data: { reports }
+    });
+  } catch (error) {
+    console.error('Error fetching monthly reports:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching monthly reports',
       error: error.message
     });
   }
@@ -514,7 +622,7 @@ router.get('/stats', protect, isHROrAbove, async (req, res) => {
           dateValue: { $first: '$date' }, // Keep original date for sorting
           totalEmployees: { $sum: 1 },
           headsetCount: {
-            $sum: { $cond: ['$headset', 1, 0] }
+            $sum: '$headset'
           }
         }
       },
@@ -564,7 +672,7 @@ router.get('/stats', protect, isHROrAbove, async (req, res) => {
           totalSales: { $sum: '$sales' },
           totalReports: { $sum: 1 },
           headsetDays: {
-            $sum: { $cond: ['$headset', 1, 0] }
+            $sum: '$headset'
           }
         }
       },
