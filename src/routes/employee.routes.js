@@ -230,8 +230,8 @@ router.put('/:id', protect, async (req, res) => {
     // If not HR, limit updateable fields
     let updateData = req.body;
     if (!isHR) {
-      const { phone, address, emergencyContact, avatar } = req.body;
-      updateData = { phone, address, emergencyContact, avatar };
+      const { phone, address, emergencyContact, avatar, firstName, lastName } = req.body;
+      updateData = { phone, address, emergencyContact, avatar, firstName, lastName };
     }
 
     const updatedEmployee = await Employee.findByIdAndUpdate(
