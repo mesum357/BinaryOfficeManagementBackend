@@ -318,8 +318,23 @@ router.get('/dashboard', protect, isHROrAbove, async (req, res) => {
     const Employee = require('../models/Employee');
     const Attendance = require('../models/Attendance');
     const Leave = require('../models/Leave');
+    const User = require('../models/User');
     
-    const totalEmployees = await Employee.countDocuments({ status: 'active' });
+    // Count only employees that actually use the Employee Website:
+    // approved users with role 'employee' mapped to an Employee doc.
+    const usersWithEmployeeAccounts = await User.find({
+      verificationStatus: 'approved',
+      role: 'employee'
+    }).select('employee');
+
+    const employeeIds = usersWithEmployeeAccounts
+      .map(u => u.employee)
+      .filter(Boolean);
+
+    const totalEmployees = await Employee.countDocuments({
+      _id: { $in: employeeIds },
+      status: 'active'
+    });
     const pendingLeaves = await Leave.countDocuments({ status: 'pending' });
     
     res.json({

@@ -24,7 +24,8 @@ router.get('/', protect, async (req, res) => {
     const query = {};
 
     // Filter tasks for non-managers
-    if (!['manager', 'boss', 'admin'].includes(req.user.role)) {
+    // HR should be able to view all tasks in HR portal as well.
+    if (!['hr', 'manager', 'boss', 'admin'].includes(req.user.role)) {
       query.$or = [
         { assignedBy: req.user._id },
         { assignedTo: req.user.employee }
@@ -252,7 +253,7 @@ router.put('/:id', protect, async (req, res) => {
       }
     );
     
-    const isManager = ['manager', 'boss', 'admin'].includes(req.user.role);
+    const isManager = ['hr', 'manager', 'boss', 'admin'].includes(req.user.role);
 
     if (!isAssigner && !isAssignee && !isManager) {
       return res.status(403).json({
@@ -476,7 +477,7 @@ router.delete('/:id', protect, async (req, res) => {
     }
 
     const isAssigner = task.assignedBy.toString() === req.user._id.toString();
-    const isManager = ['manager', 'boss', 'admin'].includes(req.user.role);
+    const isManager = ['hr', 'manager', 'boss', 'admin'].includes(req.user.role);
 
     if (!isAssigner && !isManager) {
       return res.status(403).json({

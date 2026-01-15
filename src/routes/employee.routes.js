@@ -108,11 +108,27 @@ router.get('/directory', protect, async (req, res) => {
 // @access  Private (HR or above)
 router.get('/stats', protect, isHROrAbove, async (req, res) => {
   try {
-    const totalEmployees = await Employee.countDocuments({ status: 'active' });
-    const onLeave = await Employee.countDocuments({ status: 'on-leave' });
+    // Only count real employees (those with approved accounts in employee portal)
+    const usersWithEmployeeAccounts = await User.find({
+      verificationStatus: 'approved',
+      role: 'employee'
+    }).select('employee');
+
+    const verifiedEmployeeIds = usersWithEmployeeAccounts
+      .map(u => u.employee)
+      .filter(Boolean);
+
+    const totalEmployees = await Employee.countDocuments({
+      _id: { $in: verifiedEmployeeIds },
+      status: 'active'
+    });
+    const onLeave = await Employee.countDocuments({
+      _id: { $in: verifiedEmployeeIds },
+      status: 'on-leave'
+    });
     
     const departmentStats = await Employee.aggregate([
-      { $match: { status: 'active' } },
+      { $match: { _id: { $in: verifiedEmployeeIds }, status: 'active' } },
       { $group: { _id: '$department', count: { $sum: 1 } } },
       { $lookup: { from: 'departments', localField: '_id', foreignField: '_id', as: 'dept' } },
       { $unwind: '$dept' },
@@ -120,7 +136,7 @@ router.get('/stats', protect, isHROrAbove, async (req, res) => {
     ]);
 
     const genderStats = await Employee.aggregate([
-      { $match: { status: 'active' } },
+      { $match: { _id: { $in: verifiedEmployeeIds }, status: 'active' } },
       { $group: { _id: '$gender', count: { $sum: 1 } } }
     ]);
 
