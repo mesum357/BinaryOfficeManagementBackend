@@ -378,7 +378,10 @@ router.put('/:id/approve', protect, isHROrAbove, async (req, res) => {
     const leaveTypeMap = {
       annual: 'annual',
       sick: 'sick',
-      casual: 'casual'
+      casual: 'casual',
+      maternity: 'maternity',
+      paternity: 'paternity',
+      other: 'other'
     };
 
     if (leaveTypeMap[leave.leaveType]) {

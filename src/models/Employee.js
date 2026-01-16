@@ -84,9 +84,13 @@ const employeeSchema = new mongoose.Schema({
   leaveBalance: {
     annual: { type: Number, default: 20 },
     sick: { type: Number, default: 10 },
-    casual: { type: Number, default: 5 }
+    casual: { type: Number, default: 5 },
+    maternity: { type: Number, default: 90 },
+    paternity: { type: Number, default: 10 },
+    other: { type: Number, default: 0 }
   },
   skills: [String],
+  expertise: [String],
   documents: [{
     name: String,
     url: String,
@@ -102,12 +106,12 @@ const employeeSchema = new mongoose.Schema({
 employeeSchema.index({ status: 1, department: 1 });
 
 // Virtual for full name
-employeeSchema.virtual('fullName').get(function() {
+employeeSchema.virtual('fullName').get(function () {
   return `${this.firstName} ${this.lastName}`;
 });
 
 // Generate employee ID before saving
-employeeSchema.pre('save', async function(next) {
+employeeSchema.pre('save', async function (next) {
   if (!this.employeeId) {
     const count = await mongoose.model('Employee').countDocuments();
     this.employeeId = `EMP${String(count + 1).padStart(4, '0')}`;

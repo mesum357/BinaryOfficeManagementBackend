@@ -1,6 +1,6 @@
 const express = require('express');
 const Meeting = require('../models/Meeting');
-const { protect, isManagerOrAbove } = require('../middleware/auth');
+const { protect, isHROrAbove } = require('../middleware/auth');
 const { meetingValidator } = require('../middleware/validators');
 
 const router = express.Router();
@@ -10,14 +10,14 @@ const router = express.Router();
 // @access  Private
 router.get('/', protect, async (req, res) => {
   try {
-    const { 
-      status, 
-      startDate, 
+    const {
+      status,
+      startDate,
       endDate,
-      page = 1, 
-      limit = 20 
+      page = 1,
+      limit = 20
     } = req.query;
-    
+
     const query = {};
 
     // Filter meetings where user is organizer or attendee
@@ -73,7 +73,7 @@ router.get('/', protect, async (req, res) => {
 router.get('/upcoming', protect, async (req, res) => {
   try {
     const now = new Date();
-    
+
     const query = {
       startTime: { $gte: now },
       status: { $in: ['scheduled', 'in-progress'] }
@@ -115,10 +115,10 @@ router.get('/today', protect, async (req, res) => {
   try {
     const startOfDay = new Date();
     startOfDay.setHours(0, 0, 0, 0);
-    
+
     const endOfDay = new Date();
     endOfDay.setHours(23, 59, 59, 999);
-    
+
     const query = {
       startTime: { $gte: startOfDay, $lte: endOfDay }
     };
@@ -183,8 +183,8 @@ router.get('/:id', protect, async (req, res) => {
 
 // @route   POST /api/meetings
 // @desc    Create meeting
-// @access  Private (Manager or above)
-router.post('/', protect, isManagerOrAbove, meetingValidator, async (req, res) => {
+// @access  Private (HR or above)
+router.post('/', protect, isHROrAbove, meetingValidator, async (req, res) => {
   try {
     const meeting = await Meeting.create({
       ...req.body,
@@ -247,7 +247,7 @@ router.put('/:id', protect, async (req, res) => {
       req.body,
       { new: true, runValidators: true }
     ).populate('organizer', 'email')
-     .populate('attendees.employee', 'firstName lastName');
+      .populate('attendees.employee', 'firstName lastName');
 
     res.json({
       success: true,

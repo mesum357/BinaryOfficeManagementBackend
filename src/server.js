@@ -68,6 +68,11 @@ app.use(passport.initialize());
 // Make io accessible to routes
 app.set('io', io);
 
+// Health check route for root
+app.get('/', (req, res) => {
+  res.send('Office Management API is running');
+});
+
 // API Routes
 console.log('[SERVER] Loading auth routes...');
 
@@ -88,35 +93,41 @@ if (authRoutes && authRoutes.stack) {
   console.log('[SERVER] Total middleware in auth router:', authRoutes.stack.length);
 }
 
-app.use('/api/auth', (req, res, next) => {
+const apiRouter = express.Router();
+
+apiRouter.use('/auth', (req, res, next) => {
   console.log(`[AUTH MIDDLEWARE] ${req.method} ${req.path}`);
   next();
 }, authRoutes);
 
-console.log('[SERVER] Auth routes mounted at /api/auth');
-app.use('/api/users', userRoutes);
-app.use('/api/employees', employeeRoutes);
-app.use('/api/attendance', attendanceRoutes);
-app.use('/api/leaves', leaveRoutes);
-app.use('/api/notices', noticeRoutes);
-app.use('/api/meetings', meetingRoutes);
-app.use('/api/tasks', taskRoutes);
-app.use('/api/tickets', ticketRoutes);
-app.use('/api/chat', chatRoutes);
-app.use('/api/message-requests', messageRequestRoutes);
-app.use('/api/reports', reportRoutes);
-app.use('/api/recruitment', recruitmentRoutes);
-app.use('/api/departments', departmentRoutes);
-app.use('/api/settings', settingsRoutes);
+apiRouter.use('/users', userRoutes);
+apiRouter.use('/employees', employeeRoutes);
+apiRouter.use('/attendance', attendanceRoutes);
+apiRouter.use('/leaves', leaveRoutes);
+apiRouter.use('/notices', noticeRoutes);
+apiRouter.use('/meetings', meetingRoutes);
+apiRouter.use('/tasks', taskRoutes);
+apiRouter.use('/tickets', ticketRoutes);
+apiRouter.use('/chat', chatRoutes);
+apiRouter.use('/message-requests', messageRequestRoutes);
+apiRouter.use('/reports', reportRoutes);
+apiRouter.use('/recruitment', recruitmentRoutes);
+apiRouter.use('/departments', departmentRoutes);
+apiRouter.use('/settings', settingsRoutes);
 
-// Health check route
-app.get('/api/health', (req, res) => {
+// Add health check to apiRouter as well
+apiRouter.get('/health', (req, res) => {
   res.json({
     status: 'OK',
     message: 'Office Management API is running',
     timestamp: new Date().toISOString()
   });
 });
+
+// Mount the apiRouter at both /api and root /
+app.use('/api', apiRouter);
+app.use('/', apiRouter);
+
 
 // Socket.io connection handling with authentication
 io.use((socket, next) => {
