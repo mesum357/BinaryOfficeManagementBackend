@@ -3,6 +3,7 @@ const Employee = require('../models/Employee');
 const User = require('../models/User');
 const { protect, isHROrAbove } = require('../middleware/auth');
 const { employeeValidator } = require('../middleware/validators');
+const { documentUpload } = require('../config/upload');
 
 const router = express.Router();
 
@@ -11,17 +12,17 @@ const router = express.Router();
 // @access  Private
 router.get('/', protect, async (req, res) => {
   try {
-    const { 
-      department, 
-      status, 
-      search, 
-      page = 1, 
+    const {
+      department,
+      status,
+      search,
+      page = 1,
       limit = 20,
       sortBy = 'createdAt',
       sortOrder = 'desc',
       hasAccount // Filter by employees with verified accounts
     } = req.query;
-    
+
     const query = {};
     if (department) query.department = department;
     if (status) query.status = status;
@@ -44,7 +45,7 @@ router.get('/', protect, async (req, res) => {
         verificationStatus: 'approved',
         role: 'employee' // Only show regular employees, not HR/Boss/Manager/Admin
       }).select('employee');
-      
+
       const verifiedEmployeeIds = usersWithAccounts.map(u => u.employee.toString());
       query._id = { $in: verifiedEmployeeIds };
     }
@@ -126,7 +127,7 @@ router.get('/stats', protect, isHROrAbove, async (req, res) => {
       _id: { $in: verifiedEmployeeIds },
       status: 'on-leave'
     });
-    
+
     const departmentStats = await Employee.aggregate([
       { $match: { _id: { $in: verifiedEmployeeIds }, status: 'active' } },
       { $group: { _id: '$department', count: { $sum: 1 } } },
@@ -379,6 +380,64 @@ router.delete('/:id', protect, isHROrAbove, async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Error deleting employee',
+      error: error.message
+    });
+  }
+});
+
+// @route   POST /api/employees/:id/documents
+// @desc    Upload a document for an employee
+// @access  Private (Self or HR or above)
+router.post('/:id/documents', protect, documentUpload.single('file'), async (req, res) => {
+  try {
+    const { name } = req.body;
+    const employee = await Employee.findById(req.params.id);
+
+    if (!employee) {
+      return res.status(404).json({
+        success: false,
+        message: 'Employee not found'
+      });
+    }
+
+    // Check permissions (Self or HR or above)
+    const isOwner = req.user.employee && req.user.employee.toString() === req.params.id;
+    const isHR = ['hr', 'manager', 'boss', 'admin'].includes(req.user.role);
+
+    if (!isOwner && !isHR) {
+      return res.status(403).json({
+        success: false,
+        message: 'Not authorized to upload documents for this employee'
+      });
+    }
+
+    if (!req.file) {
+      return res.status(400).json({
+        success: false,
+        message: 'Please upload a file'
+      });
+    }
+
+    const documentUrl = `${req.protocol}://${req.get('host')}/uploads/documents/${req.file.filename}`;
+
+    const newDocument = {
+      name: name || req.file.originalname,
+      url: documentUrl,
+      uploadedAt: new Date()
+    };
+
+    employee.documents.push(newDocument);
+    await employee.save();
+
+    res.status(200).json({
+      success: true,
+      message: 'Document uploaded successfully',
+      data: { document: newDocument }
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Error uploading document',
       error: error.message
     });
   }

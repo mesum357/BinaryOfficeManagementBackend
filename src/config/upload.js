@@ -18,6 +18,11 @@ if (!fs.existsSync(chatDir)) {
   fs.mkdirSync(chatDir, { recursive: true });
 }
 
+const documentsDir = path.join(uploadsDir, 'documents');
+if (!fs.existsSync(documentsDir)) {
+  fs.mkdirSync(documentsDir, { recursive: true });
+}
+
 // Configure storage for tasks
 const taskStorage = multer.diskStorage({
   destination: (req, file, cb) => {
@@ -37,6 +42,17 @@ const chatStorage = multer.diskStorage({
   filename: (req, file, cb) => {
     const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
     cb(null, `chat-${uniqueSuffix}${path.extname(file.originalname)}`);
+  }
+});
+
+// Configure storage for employee documents
+const documentStorage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    cb(null, documentsDir);
+  },
+  filename: (req, file, cb) => {
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    cb(null, `doc-${uniqueSuffix}${path.extname(file.originalname)}`);
   }
 });
 
@@ -61,8 +77,8 @@ const chatFileFilter = (req, file, cb) => {
   const mimetype = file.mimetype;
 
   const isImage = allowedImageTypes.test(extname) && allowedImageTypes.test(mimetype);
-  const isDocument = allowedDocTypes.test(extname) || mimetype.includes('application/pdf') || 
-                     mimetype.includes('application/msword') || mimetype.includes('application/vnd.openxmlformats-officedocument');
+  const isDocument = allowedDocTypes.test(extname) || mimetype.includes('application/pdf') ||
+    mimetype.includes('application/msword') || mimetype.includes('application/vnd.openxmlformats-officedocument');
 
   if (isImage || isDocument) {
     return cb(null, true);
@@ -89,5 +105,14 @@ const chatUpload = multer({
   fileFilter: chatFileFilter
 });
 
-module.exports = { upload, chatUpload };
+// Upload middleware for employee documents (images and PDFs)
+const documentUpload = multer({
+  storage: documentStorage,
+  limits: {
+    fileSize: 10 * 1024 * 1024 // 10MB limit
+  },
+  fileFilter: chatFileFilter // Reusing chatFileFilter as it allows images and docs (including PDF)
+});
+
+module.exports = { upload, chatUpload, documentUpload };
 
