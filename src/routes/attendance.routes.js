@@ -10,17 +10,17 @@ const router = express.Router();
 // @access  Private
 router.get('/', protect, async (req, res) => {
   try {
-    const { 
-      employee, 
-      startDate, 
-      endDate, 
+    const {
+      employee,
+      startDate,
+      endDate,
       status,
-      page = 1, 
-      limit = 30 
+      page = 1,
+      limit = 30
     } = req.query;
-    
+
     const query = {};
-    
+
     // Non-HR users can only see their own attendance
     if (!['hr', 'manager', 'boss', 'admin'].includes(req.user.role)) {
       query.employee = req.user.employee;
@@ -71,7 +71,7 @@ router.get('/', protect, async (req, res) => {
 router.get('/my', protect, async (req, res) => {
   try {
     const { month, year } = req.query;
-    
+
     let startDate, endDate;
     if (month && year) {
       startDate = new Date(year, month - 1, 1);
@@ -244,10 +244,10 @@ router.get('/today', protect, async (req, res) => {
 
     // Check for active break
     const activeBreak = attendance?.breaks?.find(b => !b.endTime) || null;
-    
+
     res.json({
       success: true,
-      data: { 
+      data: {
         attendance,
         isCheckedIn: !!attendance?.checkIn?.time,
         isCheckedOut: !!attendance?.checkOut?.time,
@@ -305,8 +305,20 @@ router.get('/today-presence', protect, isHROrAbove, async (req, res) => {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
-    // Get all employees with status 'active'
-    const activeEmployees = await Employee.find({ status: 'active' })
+    // Get employee IDs that are linked to HR, Boss, Admin, or Manager users (exclude from attendance)
+    const User = require('../models/User');
+    const managementUsers = await User.find({
+      role: { $in: ['hr', 'boss', 'admin', 'manager'] },
+      employee: { $exists: true, $ne: null }
+    }).select('employee').lean();
+
+    const managementEmployeeIds = managementUsers.map(u => u.employee.toString());
+
+    // Get all employees with status 'active', excluding management roles
+    const activeEmployees = await Employee.find({
+      status: 'active',
+      _id: { $nin: managementEmployeeIds }
+    })
       .select('_id firstName lastName employeeId department designation')
       .populate('department', 'name')
       .lean();
@@ -423,13 +435,13 @@ router.post('/break/start', protect, async (req, res) => {
       startTime: breakStartTime,
       reason: reason || 'break'
     });
-    
+
     await attendance.save();
 
     res.json({
       success: true,
       message: 'Break started',
-      data: { 
+      data: {
         attendance,
         activeBreak: attendance.breaks[attendance.breaks.length - 1]
       }
@@ -475,11 +487,11 @@ router.post('/break/end', protect, async (req, res) => {
     const breakEndTime = new Date();
     const activeBreak = attendance.breaks[activeBreakIndex];
     activeBreak.endTime = breakEndTime;
-    
+
     // Calculate break duration in minutes
     const durationMs = breakEndTime.getTime() - activeBreak.startTime.getTime();
     activeBreak.duration = Math.floor(durationMs / (1000 * 60));
-    
+
     await attendance.save();
 
     res.json({

@@ -1,7 +1,7 @@
 const express = require('express');
 const path = require('path');
 const Task = require('../models/Task');
-const { protect, isManagerOrAbove } = require('../middleware/auth');
+const { protect, isManagerOrAbove, isBossOrAdmin } = require('../middleware/auth');
 const { taskValidator } = require('../middleware/validators');
 const { upload } = require('../config/upload');
 
@@ -12,15 +12,15 @@ const router = express.Router();
 // @access  Private
 router.get('/', protect, async (req, res) => {
   try {
-    const { 
-      status, 
+    const {
+      status,
       priority,
       assignedTo,
       department,
-      page = 1, 
-      limit = 20 
+      page = 1,
+      limit = 20
     } = req.query;
-    
+
     const query = {};
 
     // Filter tasks for non-managers
@@ -76,7 +76,7 @@ router.get('/', protect, async (req, res) => {
 router.get('/my', protect, async (req, res) => {
   try {
     const { status } = req.query;
-    
+
     const query = { assignedTo: req.user.employee };
     if (status) query.status = status;
 
@@ -184,8 +184,8 @@ router.get('/:id', protect, async (req, res) => {
 
 // @route   POST /api/tasks
 // @desc    Create task
-// @access  Private (Manager or above)
-router.post('/', protect, isManagerOrAbove, taskValidator, async (req, res) => {
+// @access  Private (Boss or Admin only)
+router.post('/', protect, isBossOrAdmin, taskValidator, async (req, res) => {
   try {
     const task = await Task.create({
       ...req.body,
@@ -235,16 +235,16 @@ router.put('/:id', protect, async (req, res) => {
 
     // Check permissions
     const isAssigner = task.assignedBy.toString() === req.user._id.toString();
-    
+
     // Check if user is an assignee - handle both ObjectId and populated cases
     let userEmployeeId = null;
     if (req.user.employee) {
       // Handle both populated object and ObjectId
-      userEmployeeId = req.user.employee._id 
-        ? req.user.employee._id.toString() 
+      userEmployeeId = req.user.employee._id
+        ? req.user.employee._id.toString()
         : req.user.employee.toString();
     }
-    
+
     const isAssignee = userEmployeeId && task.assignedTo.some(
       (e) => {
         // Handle both ObjectId and populated employee object
@@ -252,7 +252,7 @@ router.put('/:id', protect, async (req, res) => {
         return employeeId === userEmployeeId;
       }
     );
-    
+
     const isManager = ['hr', 'manager', 'boss', 'admin'].includes(req.user.role);
 
     if (!isAssigner && !isAssignee && !isManager) {
@@ -267,13 +267,13 @@ router.put('/:id', protect, async (req, res) => {
     if (!isAssigner && !isManager) {
       const { status, progress, actualHours, submissionDescription, attachments } = req.body;
       updateData = { status, progress, actualHours };
-      
+
       // Allow submission description and attachments when submitting
       if (submissionDescription !== undefined) {
         updateData.submissionDescription = submissionDescription;
         updateData.submissionDate = new Date();
       }
-      
+
       if (attachments && Array.isArray(attachments)) {
         // Add new attachments to existing ones
         const existingAttachments = task.attachments || [];
@@ -284,7 +284,7 @@ router.put('/:id', protect, async (req, res) => {
           uploadedAt: new Date()
         }))];
       }
-      
+
       if (status === 'completed') {
         updateData.completedDate = new Date();
       }
@@ -295,7 +295,7 @@ router.put('/:id', protect, async (req, res) => {
       updateData,
       { new: true, runValidators: true }
     ).populate('assignedTo', 'firstName lastName employeeId')
-     .populate('assignedBy', 'email');
+      .populate('assignedBy', 'email');
 
     res.json({
       success: true,
@@ -326,10 +326,10 @@ router.post('/:id/upload', protect, upload.single('image'), async (req, res) => 
     }
 
     // Check if user is assignee
-    const userEmployeeId = req.user.employee 
+    const userEmployeeId = req.user.employee
       ? (req.user.employee._id ? req.user.employee._id.toString() : req.user.employee.toString())
       : null;
-    
+
     const isAssignee = userEmployeeId && task.assignedTo.some(
       (e) => {
         const employeeId = e._id ? e._id.toString() : e.toString();
@@ -477,12 +477,12 @@ router.delete('/:id', protect, async (req, res) => {
     }
 
     const isAssigner = task.assignedBy.toString() === req.user._id.toString();
-    const isManager = ['hr', 'manager', 'boss', 'admin'].includes(req.user.role);
+    const isBoss = ['boss', 'admin'].includes(req.user.role);
 
-    if (!isAssigner && !isManager) {
+    if (!isAssigner && !isBoss) {
       return res.status(403).json({
         success: false,
-        message: 'Not authorized to delete this task'
+        message: 'Not authorized to delete this task. Only the task creator or boss/admin can delete tasks.'
       });
     }
 
