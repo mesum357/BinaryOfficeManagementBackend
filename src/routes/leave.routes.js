@@ -384,10 +384,23 @@ router.put('/:id/approve', protect, isHROrAbove, async (req, res) => {
       other: 'other'
     };
 
-    if (leaveTypeMap[leave.leaveType]) {
-      await Employee.findByIdAndUpdate(leave.employee, {
-        $inc: { [`leaveBalance.${leaveTypeMap[leave.leaveType]}`]: -leave.totalDays }
-      });
+    const balanceField = leaveTypeMap[leave.leaveType];
+    if (balanceField) {
+      console.log(`[Leave Approval] Deducting ${leave.totalDays} days from ${balanceField} for employee ${leave.employee}`);
+
+      const updatedEmployee = await Employee.findByIdAndUpdate(
+        leave.employee,
+        { $inc: { [`leaveBalance.${balanceField}`]: -leave.totalDays } },
+        { new: true }
+      );
+
+      if (!updatedEmployee) {
+        console.error(`[Leave Approval] Failed to find employee ${leave.employee} for balance deduction`);
+      } else {
+        console.log(`[Leave Approval] New balance for ${balanceField}: ${updatedEmployee.leaveBalance[balanceField]}`);
+      }
+    } else {
+      console.log(`[Leave Approval] Leave type ${leave.leaveType} is not set for deduction (e.g., unpaid)`);
     }
 
     res.json({

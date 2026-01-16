@@ -99,7 +99,7 @@ router.get('/', protect, async (req, res) => {
       const unreadCount = chat.messages.filter(msg => {
         const senderId = typeof msg.sender === 'object' ? msg.sender._id.toString() : msg.sender.toString();
         if (senderId === req.user._id.toString()) return false; // Skip own messages
-        
+
         const isRead = msg.readBy.some(
           r => r.user.toString() === req.user._id.toString()
         );
@@ -196,7 +196,7 @@ router.get('/:id', protect, async (req, res) => {
 router.get('/:id/messages', protect, async (req, res) => {
   try {
     const { page = 1, limit = 50 } = req.query;
-    
+
     const chat = await Chat.findById(req.params.id);
 
     if (!chat) {
@@ -215,7 +215,7 @@ router.get('/:id/messages', protect, async (req, res) => {
 
     res.json({
       success: true,
-      data: { 
+      data: {
         messages,
         hasMore: chat.messages.length > startIndex + limit
       }
@@ -391,7 +391,8 @@ router.post('/:id/message', protect, async (req, res) => {
       if (finalMessageType === 'image') {
         lastMessageContent = content || '📷 Image';
       } else {
-        lastMessageContent = content || `📎 ${attachments[0].name}`;
+        const firstAttachmentName = attachments[0]?.name || 'File';
+        lastMessageContent = content || `📎 ${firstAttachmentName}`;
       }
     }
 
@@ -411,18 +412,21 @@ router.post('/:id/message', protect, async (req, res) => {
     };
     await chat.save();
 
-    // Populate the last message to get sender details
-    await chat.populate('messages.sender', 'email');
-    const lastMessage = chat.messages[chat.messages.length - 1];
+    // Get the newly created message (last one in array)
+    const lastMsg = chat.messages[chat.messages.length - 1];
+
+    // Format response manually instead of full population if it fails
     const populatedMessage = {
-      _id: lastMessage._id,
-      sender: typeof lastMessage.sender === 'object' 
-        ? { _id: lastMessage.sender._id, email: lastMessage.sender.email }
-        : { _id: req.user._id, email: req.user.email },
-      content: lastMessage.content,
-      messageType: lastMessage.messageType,
-      createdAt: lastMessage.createdAt,
-      readBy: lastMessage.readBy
+      _id: lastMsg._id,
+      sender: {
+        _id: req.user._id,
+        email: req.user.email
+      },
+      content: lastMsg.content,
+      messageType: lastMsg.messageType,
+      attachments: lastMsg.attachments,
+      createdAt: lastMsg.createdAt,
+      readBy: lastMsg.readBy
     };
 
     // Emit socket event to all participants except sender
@@ -477,11 +481,11 @@ router.put('/:id/group', protect, async (req, res) => {
     const { groupName, addParticipants, removeParticipants } = req.body;
 
     if (groupName) chat.groupName = groupName;
-    
+
     if (addParticipants) {
       chat.participants.push(...addParticipants);
     }
-    
+
     if (removeParticipants) {
       chat.participants = chat.participants.filter(
         p => !removeParticipants.includes(p.toString())
@@ -519,7 +523,7 @@ router.delete('/:id/message/:messageId', protect, async (req, res) => {
     }
 
     const message = chat.messages.id(req.params.messageId);
-    
+
     if (!message) {
       return res.status(404).json({
         success: false,
