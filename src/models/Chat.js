@@ -18,7 +18,7 @@ const messageSchema = new mongoose.Schema({
   attachments: [{
     name: String,
     url: String,
-    type: String,
+    attachmentType: String,
     size: Number
   }],
   readBy: [{

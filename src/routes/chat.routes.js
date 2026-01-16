@@ -335,11 +335,12 @@ router.post('/upload', protect, chatUpload.single('file'), async (req, res) => {
       data: {
         name: req.file.originalname,
         url: fileUrl,
-        type: isImage ? 'image' : 'file',
+        attachmentType: isImage ? 'image' : 'file',
         size: req.file.size
       }
     });
   } catch (error) {
+    console.error('[Chat Upload Error]:', error);
     res.status(500).json({
       success: false,
       message: 'Error uploading file',
@@ -400,7 +401,12 @@ router.post('/:id/message', protect, async (req, res) => {
       sender: req.user._id,
       content: content || '',
       messageType: finalMessageType,
-      attachments: attachments || [],
+      attachments: attachments?.map(att => ({
+        name: att.name,
+        url: att.url,
+        attachmentType: att.attachmentType || att.type, // Handle both for safety
+        size: att.size
+      })) || [],
       readBy: [{ user: req.user._id }]
     };
 
@@ -449,10 +455,12 @@ router.post('/:id/message', protect, async (req, res) => {
       data: { message: populatedMessage }
     });
   } catch (error) {
-    res.status(500).json({
+    console.error('[Chat API Error]:', error);
+    res.status(error.status || 500).json({
       success: false,
       message: 'Error sending message',
-      error: error.message
+      error: error.message,
+      stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
     });
   }
 });
