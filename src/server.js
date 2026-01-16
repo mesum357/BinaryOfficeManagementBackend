@@ -35,7 +35,9 @@ const io = new Server(server, {
       process.env.EMPLOYEE_PORTAL_URL || 'http://localhost:5173',
       process.env.MANAGEMENT_PORTAL_URL || 'http://localhost:5174',
       'https://employee-website-dkq3.onrender.com',
-      'https://management-website-mu6q.onrender.com'
+      'https://management-website-mu6q.onrender.com',
+      'https://management-website-wzwv.onrender.com',
+      'https://employee-website-8n56.onrender.com'
     ],
     methods: ['GET', 'POST']
   }
@@ -48,7 +50,9 @@ app.use(cors({
     process.env.EMPLOYEE_PORTAL_URL || 'http://localhost:5173',
     process.env.MANAGEMENT_PORTAL_URL || 'http://localhost:5174',
     'https://employee-website-dkq3.onrender.com',
-    'https://management-website-mu6q.onrender.com'
+    'https://management-website-mu6q.onrender.com',
+    'https://management-website-wzwv.onrender.com',
+    'https://employee-website-8n56.onrender.com'
   ],
   credentials: true
 }));
@@ -107,8 +111,8 @@ app.use('/api/settings', settingsRoutes);
 
 // Health check route
 app.get('/api/health', (req, res) => {
-  res.json({ 
-    status: 'OK', 
+  res.json({
+    status: 'OK',
     message: 'Office Management API is running',
     timestamp: new Date().toISOString()
   });
@@ -128,7 +132,7 @@ io.on('connection', (socket) => {
   socket.on('join', (userId) => {
     socket.join(userId);
     console.log(`👤 User ${userId} joined their room`);
-    
+
     // Notify others that this user is online (optional)
     socket.broadcast.emit('userOnline', { userId });
   });
@@ -158,7 +162,7 @@ io.on('connection', (socket) => {
 // Error handling middleware
 app.use((err, req, res, next) => {
   console.error(err.stack);
-  res.status(500).json({ 
+  res.status(500).json({
     success: false,
     message: 'Something went wrong!',
     error: process.env.NODE_ENV === 'development' ? err.message : undefined
@@ -169,7 +173,7 @@ app.use((err, req, res, next) => {
 app.use((req, res) => {
   console.log('[404 HANDLER] Route not found:', req.method, req.path);
   console.log('[404 HANDLER] Available routes:', req.app._router?.stack?.length || 'unknown');
-  res.status(404).json({ 
+  res.status(404).json({
     success: false,
     message: 'Route not found',
     path: req.path,
