@@ -12,18 +12,18 @@ const router = express.Router();
 // @access  Private
 router.get('/', protect, async (req, res) => {
   try {
-    const { 
-      employee, 
-      status, 
+    const {
+      employee,
+      status,
       leaveType,
       startDate,
       endDate,
-      page = 1, 
-      limit = 20 
+      page = 1,
+      limit = 20
     } = req.query;
-    
+
     const query = {};
-    
+
     // Non-HR users can only see their own leaves
     if (!['hr', 'manager', 'boss', 'admin'].includes(req.user.role)) {
       query.employee = req.user.employee;
@@ -82,7 +82,7 @@ router.get('/my', protect, async (req, res) => {
 
     res.json({
       success: true,
-      data: { 
+      data: {
         leaves,
         leaveBalance: employee?.leaveBalance
       }
@@ -141,7 +141,7 @@ router.get('/balance', protect, async (req, res) => {
 
     // Fetch all active leave policies set by HR
     const policies = await LeavePolicy.find({ isActive: true }).lean();
-    
+
     // Create a map of leave types to monthly limits
     const policyMap = {};
     policies.forEach(policy => {
@@ -152,7 +152,7 @@ router.get('/balance', protect, async (req, res) => {
     const now = new Date();
     const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
     const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
-    
+
     const usedLeaves = await Leave.aggregate([
       {
         $match: {
@@ -183,12 +183,12 @@ router.get('/balance', protect, async (req, res) => {
 
     // Map common leave types
     const leaveTypes = ['annual', 'sick', 'casual', 'maternity', 'paternity', 'unpaid', 'other'];
-    
+
     leaveTypes.forEach(type => {
       const monthlyLimit = policyMap[type] || 0;
       const usedDays = usedMap[type] || 0;
       const remainingDays = Math.max(0, monthlyLimit - usedDays);
-      
+
       // For backward compatibility, maintain the old structure but use policy values
       balance[type] = monthlyLimit; // This represents the total/limit
       used[type] = usedDays;
@@ -198,7 +198,7 @@ router.get('/balance', protect, async (req, res) => {
 
     res.json({
       success: true,
-      data: { 
+      data: {
         balance: balance, // Total/limit from policies
         used: used, // Used this month
         remaining: remaining, // Remaining this month
@@ -222,7 +222,7 @@ router.get('/balance', protect, async (req, res) => {
 router.get('/policy', protect, isHROrAbove, async (req, res) => {
   try {
     console.log('[Leave Routes] Fetching leave policies...');
-    
+
     // Check if LeavePolicy model is available
     if (!LeavePolicy) {
       console.error('[Leave Routes] LeavePolicy model not found');
@@ -231,14 +231,14 @@ router.get('/policy', protect, isHROrAbove, async (req, res) => {
         message: 'LeavePolicy model not available'
       });
     }
-    
+
     const policies = await LeavePolicy.find({ isActive: true })
       .populate('createdBy', 'email')
       .populate('updatedBy', 'email')
       .sort({ leaveType: 1 });
 
     console.log('[Leave Routes] Found policies:', policies?.length || 0);
-    
+
     res.json({
       success: true,
       data: { policies: policies || [] }
@@ -250,7 +250,7 @@ router.get('/policy', protect, isHROrAbove, async (req, res) => {
     if (error.stack) {
       console.error('[Leave Routes] Error stack:', error.stack);
     }
-    
+
     res.status(500).json({
       success: false,
       message: 'Error fetching leave policies',
@@ -268,9 +268,9 @@ router.get('/policy', protect, isHROrAbove, async (req, res) => {
 // @access  Private (HR or above)
 router.get('/policy/:leaveType', protect, isHROrAbove, async (req, res) => {
   try {
-    const policy = await LeavePolicy.findOne({ 
+    const policy = await LeavePolicy.findOne({
       leaveType: req.params.leaveType,
-      isActive: true 
+      isActive: true
     });
 
     if (!policy) {
@@ -457,7 +457,8 @@ router.put('/:id/cancel', protect, async (req, res) => {
     }
 
     // Check ownership
-    if (leave.employee.toString() !== req.user.employee.toString()) {
+    const userEmployeeId = req.user.employee && (req.user.employee._id || req.user.employee).toString();
+    if (leave.employee.toString() !== userEmployeeId) {
       return res.status(403).json({
         success: false,
         message: 'Not authorized to cancel this leave'

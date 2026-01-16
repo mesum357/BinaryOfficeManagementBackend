@@ -234,7 +234,7 @@ router.put('/:id', protect, async (req, res) => {
     }
 
     // Check permissions
-    const isOwner = req.user.employee && req.user.employee.toString() === req.params.id;
+    const isOwner = req.user.employee && (req.user.employee._id || req.user.employee).toString() === req.params.id;
     const isHR = ['hr', 'manager', 'boss', 'admin'].includes(req.user.role);
 
     if (!isOwner && !isHR) {
@@ -401,7 +401,7 @@ router.post('/:id/documents', protect, documentUpload.single('file'), async (req
     }
 
     // Check permissions (Self or HR or above)
-    const isOwner = req.user.employee && req.user.employee.toString() === req.params.id;
+    const isOwner = req.user.employee && (req.user.employee._id || req.user.employee).toString() === req.params.id;
     const isHR = ['hr', 'manager', 'boss', 'admin'].includes(req.user.role);
 
     if (!isOwner && !isHR) {
