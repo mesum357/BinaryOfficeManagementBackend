@@ -125,7 +125,7 @@ router.get('/pending', protect, isHROrAbove, async (req, res) => {
 });
 
 // @route   GET /api/leaves/balance
-// @desc    Get leave balance based on HR policies
+// @desc    Get leave balance based on Employee's assigned balance (updated when leaves are approved)
 // @access  Private
 router.get('/balance', protect, async (req, res) => {
   try {
@@ -139,10 +139,10 @@ router.get('/balance', protect, async (req, res) => {
       });
     }
 
-    // Fetch all active leave policies set by HR
+    // Fetch all active leave policies set by HR (for reference/display)
     const policies = await LeavePolicy.find({ isActive: true }).lean();
 
-    // Create a map of leave types to monthly limits
+    // Create a map of leave types to monthly limits from policies
     const policyMap = {};
     policies.forEach(policy => {
       policyMap[policy.leaveType] = policy.monthlyLimit || 0;
@@ -169,13 +169,13 @@ router.get('/balance', protect, async (req, res) => {
       }
     ]);
 
-    // Create a map of used leaves by type
+    // Create a map of used leaves by type (this month only)
     const usedMap = {};
     usedLeaves.forEach(item => {
       usedMap[item._id] = item.totalDays;
     });
 
-    // Build balance object based on policies
+    // Build balance object using Employee.leaveBalance (which is updated when leaves are approved)
     const balance = {};
     const used = {};
     const remaining = {};
@@ -185,24 +185,28 @@ router.get('/balance', protect, async (req, res) => {
     const leaveTypes = ['annual', 'sick', 'casual', 'maternity', 'paternity', 'unpaid', 'other'];
 
     leaveTypes.forEach(type => {
+      // Use Employee's leaveBalance as the total/limit (this is deducted when leaves are approved)
+      const employeeBalance = employee.leaveBalance?.[type] || 0;
       const monthlyLimit = policyMap[type] || 0;
-      const usedDays = usedMap[type] || 0;
-      const remainingDays = Math.max(0, monthlyLimit - usedDays);
+      const usedDaysThisMonth = usedMap[type] || 0;
 
-      // For backward compatibility, maintain the old structure but use policy values
-      balance[type] = monthlyLimit; // This represents the total/limit
-      used[type] = usedDays;
-      remaining[type] = remainingDays;
-      totals[type] = monthlyLimit;
+      // Balance shows the employee's current remaining balance (already deducted when approved)
+      balance[type] = employeeBalance;
+      // Used shows how many days used this month
+      used[type] = usedDaysThisMonth;
+      // Remaining is the same as balance since balance is already deducted
+      remaining[type] = employeeBalance;
+      // Totals shows the HR policy limit for reference
+      totals[type] = monthlyLimit > 0 ? monthlyLimit : employeeBalance;
     });
 
     res.json({
       success: true,
       data: {
-        balance: balance, // Total/limit from policies
+        balance: balance, // Employee's current remaining balance (deducted when approved)
         used: used, // Used this month
-        remaining: remaining, // Remaining this month
-        totals: totals, // Same as balance for backward compatibility
+        remaining: remaining, // Same as balance (already deducted)
+        totals: totals, // HR policy limits for reference
         policies: policies.map(p => ({ leaveType: p.leaveType, monthlyLimit: p.monthlyLimit }))
       }
     });
