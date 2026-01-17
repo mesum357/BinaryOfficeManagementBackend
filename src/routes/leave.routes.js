@@ -143,10 +143,19 @@ router.get('/balance', protect, async (req, res) => {
     const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
     const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
 
+    // Get employee ID - handle both ObjectId and populated object cases
+    const mongoose = require('mongoose');
+    const employeeId = req.user.employee?._id || req.user.employee;
+    const employeeObjectId = mongoose.Types.ObjectId.isValid(employeeId)
+      ? new mongoose.Types.ObjectId(employeeId)
+      : employeeId;
+
+    console.log('[Leave Balance] Fetching balance for employee:', employeeObjectId);
+
     const usedLeaves = await Leave.aggregate([
       {
         $match: {
-          employee: req.user.employee,
+          employee: employeeObjectId,
           status: 'approved',
           $or: [
             { startDate: { $gte: startOfMonth, $lte: endOfMonth } },
@@ -162,6 +171,8 @@ router.get('/balance', protect, async (req, res) => {
         }
       }
     ]);
+
+    console.log('[Leave Balance] Used leaves aggregation result:', usedLeaves);
 
     // Create a map of used leaves by type
     const usedMap = {};
@@ -191,6 +202,8 @@ router.get('/balance', protect, async (req, res) => {
       remaining[type] = remainingDays; // Remaining this month
       totals[type] = monthlyLimit; // Same as balance for display
     });
+
+    console.log('[Leave Balance] Final response - balance:', balance, 'used:', used, 'remaining:', remaining);
 
     res.json({
       success: true,
