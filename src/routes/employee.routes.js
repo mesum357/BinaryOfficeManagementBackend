@@ -159,6 +159,91 @@ router.get('/stats', protect, isHROrAbove, async (req, res) => {
   }
 });
 
+// @route   GET /api/employees/with-status
+// @desc    Get employees with real-time attendance status
+// @access  Private (HR or above)
+router.get('/with-status', protect, isHROrAbove, async (req, res) => {
+  try {
+    const { department, search } = req.query;
+
+    const query = {};
+    if (department && department !== 'all') query.department = department;
+    if (search) {
+      query.$or = [
+        { firstName: { $regex: search, $options: 'i' } },
+        { lastName: { $regex: search, $options: 'i' } },
+        { email: { $regex: search, $options: 'i' } },
+        { employeeId: { $regex: search, $options: 'i' } }
+      ];
+    }
+
+    // Only get active employees who have verified accounts
+    const users = await User.find({ verificationStatus: 'approved', role: 'employee' }).select('employee');
+    const employeeIds = users.map(u => u.employee);
+
+    query._id = { $in: employeeIds };
+    query.status = 'active';
+
+    const employees = await Employee.find(query)
+      .populate('department', 'name code')
+      .populate('manager', 'firstName lastName')
+      .sort({ firstName: 1 })
+      .lean();
+
+    // Get today's attendance for these employees
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const tomorrow = new Date(today);
+    tomorrow.setDate(today.getDate() + 1);
+
+    const Attendance = require('../models/Attendance');
+    const attendanceRecords = await Attendance.find({
+      employee: { $in: employees.map(e => e._id) },
+      date: { $gte: today, $lt: tomorrow }
+    });
+
+    // Map attendance status to employees
+    const employeesWithStatus = employees.map(emp => {
+      const attendance = attendanceRecords.find(a => a.employee.toString() === emp._id.toString());
+
+      let realTimeStatus = 'inactive'; // Default (not clocked in)
+
+      if (attendance) {
+        if (attendance.checkOut && attendance.checkOut.time) {
+          realTimeStatus = 'clocked-out';
+        } else if (attendance.checkIn && attendance.checkIn.time) {
+          // Check if on break
+          const lastBreak = attendance.breaks && attendance.breaks.length > 0
+            ? attendance.breaks[attendance.breaks.length - 1]
+            : null;
+
+          if (lastBreak && !lastBreak.endTime) {
+            realTimeStatus = 'on-break';
+          } else {
+            realTimeStatus = 'clocked-in';
+          }
+        }
+      }
+
+      return {
+        ...emp,
+        attendanceStatus: realTimeStatus
+      };
+    });
+
+    res.json({
+      success: true,
+      data: { employees: employeesWithStatus }
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching employee status',
+      error: error.message
+    });
+  }
+});
+
 // @route   GET /api/employees/:id
 // @desc    Get employee by ID
 // @access  Private

@@ -486,17 +486,17 @@ router.delete('/:id', protect, async (req, res) => {
       });
     }
 
-    task.status = 'cancelled';
-    await task.save();
+    // Delete task permanently
+    await Task.findByIdAndDelete(req.params.id);
 
     res.json({
       success: true,
-      message: 'Task cancelled successfully'
+      message: 'Task deleted permanently'
     });
   } catch (error) {
     res.status(500).json({
       success: false,
-      message: 'Error cancelling task',
+      message: 'Error deleting task',
       error: error.message
     });
   }
