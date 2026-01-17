@@ -332,6 +332,40 @@ router.get('/:id', protect, async (req, res) => {
 // @access  Private
 router.post('/', protect, leaveValidator, async (req, res) => {
   try {
+    const { leaveType, startDate, endDate, totalDays } = req.body;
+
+    // Check employee's leave balance for this type
+    const employee = await Employee.findById(req.user.employee).select('leaveBalance');
+
+    if (!employee) {
+      return res.status(404).json({
+        success: false,
+        message: 'Employee not found'
+      });
+    }
+
+    // Get current balance for the requested leave type
+    const currentBalance = employee.leaveBalance?.[leaveType] || 0;
+
+    // Calculate days being requested
+    let requestedDays = totalDays;
+    if (!requestedDays && startDate && endDate) {
+      const start = new Date(startDate);
+      const end = new Date(endDate);
+      const diffTime = Math.abs(end - start);
+      requestedDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
+    }
+
+    // Check if employee has sufficient balance (skip check for unpaid leave)
+    if (leaveType !== 'unpaid' && currentBalance < requestedDays) {
+      return res.status(400).json({
+        success: false,
+        message: currentBalance === 0
+          ? `You have no ${leaveType} leave balance remaining. Please choose a different leave type.`
+          : `Insufficient ${leaveType} leave balance. You have ${currentBalance} day(s) remaining but requested ${requestedDays} day(s).`
+      });
+    }
+
     const leave = await Leave.create({
       ...req.body,
       employee: req.user.employee
