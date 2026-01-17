@@ -125,21 +125,11 @@ router.get('/pending', protect, isHROrAbove, async (req, res) => {
 });
 
 // @route   GET /api/leaves/balance
-// @desc    Get leave balance based on Employee's assigned balance (updated when leaves are approved)
+// @desc    Get leave balance showing HR policy limits and used/remaining for current month
 // @access  Private
 router.get('/balance', protect, async (req, res) => {
   try {
-    const employee = await Employee.findById(req.user.employee)
-      .select('leaveBalance');
-
-    if (!employee) {
-      return res.status(404).json({
-        success: false,
-        message: 'Employee not found'
-      });
-    }
-
-    // Fetch all active leave policies set by HR (for reference/display)
+    // Fetch all active leave policies set by HR
     const policies = await LeavePolicy.find({ isActive: true }).lean();
 
     // Create a map of leave types to monthly limits from policies
@@ -148,7 +138,7 @@ router.get('/balance', protect, async (req, res) => {
       policyMap[policy.leaveType] = policy.monthlyLimit || 0;
     });
 
-    // Calculate used leaves for the current month
+    // Calculate used leaves for the current month (approved leaves only)
     const now = new Date();
     const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
     const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
@@ -158,7 +148,11 @@ router.get('/balance', protect, async (req, res) => {
         $match: {
           employee: req.user.employee,
           status: 'approved',
-          startDate: { $gte: startOfMonth, $lte: endOfMonth }
+          $or: [
+            { startDate: { $gte: startOfMonth, $lte: endOfMonth } },
+            { endDate: { $gte: startOfMonth, $lte: endOfMonth } },
+            { startDate: { $lte: startOfMonth }, endDate: { $gte: endOfMonth } }
+          ]
         }
       },
       {
@@ -169,44 +163,42 @@ router.get('/balance', protect, async (req, res) => {
       }
     ]);
 
-    // Create a map of used leaves by type (this month only)
+    // Create a map of used leaves by type
     const usedMap = {};
     usedLeaves.forEach(item => {
       usedMap[item._id] = item.totalDays;
     });
 
-    // Build balance object using Employee.leaveBalance (which is updated when leaves are approved)
+    // Build balance object based on HR policies
     const balance = {};
     const used = {};
     const remaining = {};
     const totals = {};
 
-    // Map common leave types
+    // All leave types
     const leaveTypes = ['annual', 'sick', 'casual', 'maternity', 'paternity', 'unpaid', 'other'];
 
     leaveTypes.forEach(type => {
-      // Use Employee's leaveBalance as the total/limit (this is deducted when leaves are approved)
-      const employeeBalance = employee.leaveBalance?.[type] || 0;
+      // Total/limit comes from HR policy
       const monthlyLimit = policyMap[type] || 0;
+      // Used this month
       const usedDaysThisMonth = usedMap[type] || 0;
+      // Remaining = limit - used
+      const remainingDays = Math.max(0, monthlyLimit - usedDaysThisMonth);
 
-      // Balance shows the employee's current remaining balance (already deducted when approved)
-      balance[type] = employeeBalance;
-      // Used shows how many days used this month
-      used[type] = usedDaysThisMonth;
-      // Remaining is the same as balance since balance is already deducted
-      remaining[type] = employeeBalance;
-      // Totals shows the HR policy limit for reference
-      totals[type] = monthlyLimit > 0 ? monthlyLimit : employeeBalance;
+      balance[type] = monthlyLimit; // Total limit set by HR
+      used[type] = usedDaysThisMonth; // Used this month
+      remaining[type] = remainingDays; // Remaining this month
+      totals[type] = monthlyLimit; // Same as balance for display
     });
 
     res.json({
       success: true,
       data: {
-        balance: balance, // Employee's current remaining balance (deducted when approved)
-        used: used, // Used this month
-        remaining: remaining, // Same as balance (already deducted)
-        totals: totals, // HR policy limits for reference
+        balance: balance, // Total limit from HR policies
+        used: used, // Used this month (approved leaves)
+        remaining: remaining, // Remaining = limit - used
+        totals: totals, // Same as balance
         policies: policies.map(p => ({ leaveType: p.leaveType, monthlyLimit: p.monthlyLimit }))
       }
     });
@@ -334,18 +326,38 @@ router.post('/', protect, leaveValidator, async (req, res) => {
   try {
     const { leaveType, startDate, endDate, totalDays } = req.body;
 
-    // Check employee's leave balance for this type
-    const employee = await Employee.findById(req.user.employee).select('leaveBalance');
+    // Get HR policy for this leave type
+    const policy = await LeavePolicy.findOne({ leaveType, isActive: true });
+    const monthlyLimit = policy?.monthlyLimit || 0;
 
-    if (!employee) {
-      return res.status(404).json({
-        success: false,
-        message: 'Employee not found'
-      });
-    }
+    // Calculate used leaves for the current month
+    const now = new Date();
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
 
-    // Get current balance for the requested leave type
-    const currentBalance = employee.leaveBalance?.[leaveType] || 0;
+    const usedLeaves = await Leave.aggregate([
+      {
+        $match: {
+          employee: req.user.employee,
+          leaveType: leaveType,
+          status: 'approved',
+          $or: [
+            { startDate: { $gte: startOfMonth, $lte: endOfMonth } },
+            { endDate: { $gte: startOfMonth, $lte: endOfMonth } },
+            { startDate: { $lte: startOfMonth }, endDate: { $gte: endOfMonth } }
+          ]
+        }
+      },
+      {
+        $group: {
+          _id: null,
+          totalDays: { $sum: '$totalDays' }
+        }
+      }
+    ]);
+
+    const usedDays = usedLeaves.length > 0 ? usedLeaves[0].totalDays : 0;
+    const remainingBalance = Math.max(0, monthlyLimit - usedDays);
 
     // Calculate days being requested
     let requestedDays = totalDays;
@@ -357,12 +369,12 @@ router.post('/', protect, leaveValidator, async (req, res) => {
     }
 
     // Check if employee has sufficient balance (skip check for unpaid leave)
-    if (leaveType !== 'unpaid' && currentBalance < requestedDays) {
+    if (leaveType !== 'unpaid' && remainingBalance < requestedDays) {
       return res.status(400).json({
         success: false,
-        message: currentBalance === 0
-          ? `You have no ${leaveType} leave balance remaining. Please choose a different leave type.`
-          : `Insufficient ${leaveType} leave balance. You have ${currentBalance} day(s) remaining but requested ${requestedDays} day(s).`
+        message: remainingBalance === 0
+          ? `You have no ${leaveType} leave balance remaining this month. Please choose a different leave type.`
+          : `Insufficient ${leaveType} leave balance. You have ${remainingBalance} day(s) remaining this month but requested ${requestedDays} day(s).`
       });
     }
 
@@ -406,40 +418,14 @@ router.put('/:id/approve', protect, isHROrAbove, async (req, res) => {
       });
     }
 
+    // Approve the leave - balance is calculated dynamically from approved leaves
     leave.status = 'approved';
     leave.reviewedBy = req.user._id;
     leave.reviewedOn = new Date();
     leave.reviewerComments = req.body.comments;
     await leave.save();
 
-    // Deduct from leave balance
-    const leaveTypeMap = {
-      annual: 'annual',
-      sick: 'sick',
-      casual: 'casual',
-      maternity: 'maternity',
-      paternity: 'paternity',
-      other: 'other'
-    };
-
-    const balanceField = leaveTypeMap[leave.leaveType];
-    if (balanceField) {
-      console.log(`[Leave Approval] Deducting ${leave.totalDays} days from ${balanceField} for employee ${leave.employee}`);
-
-      const updatedEmployee = await Employee.findByIdAndUpdate(
-        leave.employee,
-        { $inc: { [`leaveBalance.${balanceField}`]: -leave.totalDays } },
-        { new: true }
-      );
-
-      if (!updatedEmployee) {
-        console.error(`[Leave Approval] Failed to find employee ${leave.employee} for balance deduction`);
-      } else {
-        console.log(`[Leave Approval] New balance for ${balanceField}: ${updatedEmployee.leaveBalance[balanceField]}`);
-      }
-    } else {
-      console.log(`[Leave Approval] Leave type ${leave.leaveType} is not set for deduction (e.g., unpaid)`);
-    }
+    console.log(`[Leave Approval] Approved ${leave.totalDays} days of ${leave.leaveType} leave for employee ${leave.employee}`);
 
     res.json({
       success: true,
