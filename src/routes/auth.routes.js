@@ -58,13 +58,13 @@ router.post('/register', registerValidator, async (req, res) => {
       });
     }
 
-    const { 
-      email, 
-      password, 
-      firstName, 
-      lastName, 
-      phone, 
-      department, 
+    const {
+      email,
+      password,
+      firstName,
+      lastName,
+      phone,
+      department,
       designation,
       dateOfBirth,
       gender,
@@ -81,13 +81,26 @@ router.post('/register', registerValidator, async (req, res) => {
     }
 
     // Validate department exists
-    const dept = await Department.findById(department);
+    let dept;
+    const mongoose = require('mongoose');
+    if (mongoose.Types.ObjectId.isValid(department)) {
+      dept = await Department.findById(department);
+    } else {
+      // Fallback: Check by name if it's a string name (like from old hardcoded frontend)
+      dept = await Department.findOne({
+        name: { $regex: new RegExp(`^${department}$`, 'i') }
+      });
+    }
+
     if (!dept) {
       return res.status(400).json({
         success: false,
         message: 'Invalid department selected'
       });
     }
+
+    // Use the actual department ID
+    const departmentId = dept._id;
 
     // Generate unique employeeId by finding the highest existing ID
     const employees = await Employee.find({}, { employeeId: 1 });
@@ -109,7 +122,7 @@ router.post('/register', registerValidator, async (req, res) => {
       lastName,
       email: email.toLowerCase(),
       phone,
-      department,
+      department: departmentId,
       designation,
       dateOfBirth,
       gender,
@@ -150,11 +163,11 @@ router.post('/register', registerValidator, async (req, res) => {
 // @desc    Login user using Passport.js
 // @access  Public
 router.post('/login', (req, res, next) => {
-  console.log('[Auth Route] Login request received', { 
-    email: req.body.email, 
-    hasPassword: !!req.body.password 
+  console.log('[Auth Route] Login request received', {
+    email: req.body.email,
+    hasPassword: !!req.body.password
   });
-  
+
   passport.authenticate('local', { session: false }, (err, user, info) => {
     if (err) {
       console.error('[Auth Route] Authentication error', err);
@@ -166,9 +179,9 @@ router.post('/login', (req, res, next) => {
     }
 
     if (!user) {
-      console.log('[Auth Route] Authentication failed', { 
-        message: info?.message, 
-        code: info?.code 
+      console.log('[Auth Route] Authentication failed', {
+        message: info?.message,
+        code: info?.code
       });
       return res.status(401).json({
         success: false,
@@ -177,10 +190,10 @@ router.post('/login', (req, res, next) => {
       });
     }
 
-    console.log('[Auth Route] Authentication successful', { 
-      userId: user._id, 
-      email: user.email, 
-      role: user.role 
+    console.log('[Auth Route] Authentication successful', {
+      userId: user._id,
+      email: user.email,
+      role: user.role
     });
 
     // Update last login
@@ -214,12 +227,12 @@ router.post('/login', (req, res, next) => {
         }
       }
     };
-    
-    console.log('[Auth Route] Sending success response', { 
-      hasToken: !!response.data.token, 
-      userRole: response.data.user.role 
+
+    console.log('[Auth Route] Sending success response', {
+      hasToken: !!response.data.token,
+      userRole: response.data.user.role
     });
-    
+
     res.json(response);
   })(req, res, next);
 });
@@ -269,7 +282,7 @@ router.get('/pending-registrations', protect, isHROrAbove, async (req, res) => {
 
     res.json({
       success: true,
-      data: { 
+      data: {
         pendingRegistrations: pendingUsers.map(user => ({
           userId: user._id,
           email: user.email,
@@ -513,20 +526,20 @@ const getRPID = (req) => {
   if (process.env.WEBAUTHN_RP_ID) {
     return process.env.WEBAUTHN_RP_ID;
   }
-  
+
   // Get origin from request headers
   const origin = req.headers.origin || req.headers.referer;
-  
+
   if (origin) {
     try {
       const url = new URL(origin);
       const hostname = url.hostname;
-      
+
       // For localhost, use localhost
       if (hostname === 'localhost' || hostname === '127.0.0.1') {
         return 'localhost';
       }
-      
+
       // For production, extract domain (remove port and www)
       // e.g., https://employee-website-dkq3.onrender.com -> employee-website-dkq3.onrender.com
       return hostname.replace(/^www\./, '');
@@ -534,7 +547,7 @@ const getRPID = (req) => {
       console.error('Error parsing origin:', e);
     }
   }
-  
+
   // Fallback to localhost for development
   return 'localhost';
 };
@@ -544,7 +557,7 @@ const getOrigin = (req) => {
   if (process.env.WEBAUTHN_ORIGIN) {
     return process.env.WEBAUTHN_ORIGIN;
   }
-  
+
   const origin = req.headers.origin || req.headers.referer;
   if (origin) {
     try {
@@ -554,10 +567,10 @@ const getOrigin = (req) => {
       console.error('Error parsing origin:', e);
     }
   }
-  
+
   // Fallback
-  return process.env.NODE_ENV === 'production' 
-    ? 'https://localhost' 
+  return process.env.NODE_ENV === 'production'
+    ? 'https://localhost'
     : 'http://localhost:5173';
 };
 
@@ -567,7 +580,7 @@ const getOrigin = (req) => {
 router.post('/webauthn/register/start', protect, async (req, res) => {
   try {
     const user = await User.findById(req.user._id).select('webauthnCredentials email');
-    
+
     if (!user) {
       return res.status(404).json({
         success: false,
@@ -666,7 +679,7 @@ router.post('/webauthn/register/complete', protect, async (req, res) => {
     // Get the actual origin and RP ID from the request
     const requestOrigin = getOrigin(req);
     const requestRPID = getRPID(req);
-    
+
     console.log('Verifying credential for user:', user._id);
     console.log('Credential structure:', JSON.stringify(credential, null, 2).substring(0, 500));
     console.log('Expected challenge:', user.webauthnRegistrationChallenge);
@@ -730,7 +743,7 @@ router.post('/webauthn/register/complete', protect, async (req, res) => {
 
     // In SimpleWebAuthn v13+, credential info is nested in registrationInfo.credential
     const credentialInfo = registrationInfo.credential || registrationInfo;
-    
+
     // Check both old and new structure
     let credentialID = credentialInfo.id || credentialInfo.credentialID || registrationInfo.credentialID;
     let credentialPublicKey = credentialInfo.publicKey || credentialInfo.credentialPublicKey || registrationInfo.credentialPublicKey;
@@ -868,13 +881,13 @@ router.post('/webauthn/register/complete', protect, async (req, res) => {
 
     // Clear the challenge
     user.webauthnRegistrationChallenge = undefined;
-    
+
     try {
       console.log('[REGISTER] Attempting to save user...');
       const savedUser = await user.save();
       console.log('[REGISTER] User saved successfully');
       console.log('[REGISTER] Saved user credentials count:', savedUser.webauthnCredentials?.length || 0);
-      
+
       // Verify by fetching the user again
       const verifyUser = await User.findById(user._id).select('+webauthnCredentials');
       console.log('[REGISTER] Verification - fetched user credentials count:', verifyUser.webauthnCredentials?.length || 0);
@@ -982,9 +995,9 @@ router.post('/webauthn/login/complete', async (req, res) => {
 
     console.log('[AUTH ROUTES] Step 2: Searching for users with credential ID:', credential.id);
     console.log('[AUTH ROUTES] Step 2.0: Credential ID type:', typeof credential.id, 'length:', credential.id?.length);
-    
+
     // Check if ANY users have credentials at all
-    const allUsersWithCredentials = await User.find({ 
+    const allUsersWithCredentials = await User.find({
       'webauthnCredentials.0': { $exists: true }
     }).select('+webauthnCredentials email role employee verificationStatus isActive').limit(10);
     console.log('[AUTH ROUTES] Step 2.0.0: Total users with any credentials:', allUsersWithCredentials?.length || 0);
@@ -1004,28 +1017,28 @@ router.post('/webauthn/login/complete', async (req, res) => {
         }
       });
     }
-    
+
     // First, try without the verification status filter to see if there are any users with this credential
-    const allUsersAnyStatus = await User.find({ 
+    const allUsersAnyStatus = await User.find({
       'webauthnCredentials.credentialId': credential.id
     }).select('+webauthnCredentials email role employee verificationStatus isActive');
     console.log('[AUTH ROUTES] Step 2.0.1: Found users (any status) with matching credential ID:', allUsersAnyStatus?.length || 0);
-    
+
     // For usernameless authentication, find user by credential ID
     // Search all users for this credential ID
     // Note: webauthnCredentials might not be selected by default, so we need to explicitly include it
-    const allUsers = await User.find({ 
+    const allUsers = await User.find({
       'webauthnCredentials.credentialId': credential.id,
       verificationStatus: 'approved',
       isActive: true
     })
-    .select('+webauthnCredentials email role employee')
-    .populate({
-      path: 'employee',
-      populate: { path: 'department' }
-    });
+      .select('+webauthnCredentials email role employee')
+      .populate({
+        path: 'employee',
+        populate: { path: 'department' }
+      });
     console.log('[AUTH ROUTES] Step 2.1: Found users (approved & active):', allUsers?.length || 0);
-    
+
     // Verify credentials are loaded
     if (allUsers && allUsers.length > 0) {
       allUsers.forEach((u, idx) => {
@@ -1043,14 +1056,14 @@ router.post('/webauthn/login/complete', async (req, res) => {
 
     console.log('[AUTH ROUTES] Step 3: Finding matching credential in users');
     console.log('[AUTH ROUTES] Step 3.0: All users array length:', allUsers?.length || 0);
-    
+
     // Find the user with matching credential
     let user = null;
     let userCredential = null;
-    
+
     for (const u of allUsers) {
       console.log(`[AUTH ROUTES] Step 3.1: Checking user ${u.email}, hasCredentials: ${!!u.webauthnCredentials}, credentialsType: ${typeof u.webauthnCredentials}, isArray: ${Array.isArray(u.webauthnCredentials)}, length: ${u.webauthnCredentials?.length || 0}`);
-      
+
       // If credentials aren't loaded, fetch them explicitly
       if (!u.webauthnCredentials || !Array.isArray(u.webauthnCredentials)) {
         console.log(`[AUTH ROUTES] Step 3.2: User ${u.email} credentials not loaded, fetching...`);
@@ -1069,11 +1082,11 @@ router.post('/webauthn/login/complete', async (req, res) => {
           continue;
         }
       }
-      
+
       const cred = u.webauthnCredentials.find(
         c => c && c.credentialId === credential.id
       );
-      
+
       if (cred) {
         console.log(`[AUTH ROUTES] Step 3.3: Found matching credential for user ${u.email}`);
         user = u;
@@ -1095,7 +1108,7 @@ router.post('/webauthn/login/complete', async (req, res) => {
         message: 'Fingerprint credential not found'
       });
     }
-    
+
     console.log('[AUTH ROUTES] Step 3.6: Found user and credential:', user.email, userCredential.credentialId?.substring(0, 30));
 
     console.log('[AUTH ROUTES] Step 4: User found, converting credentials to buffers');
@@ -1112,21 +1125,21 @@ router.post('/webauthn/login/complete', async (req, res) => {
     // - credentialID: Buffer or Uint8Array
     // - credentialPublicKey: Uint8Array (COSE key format)
     let credentialID = isoBase64URL.toBuffer(userCredential.credentialId);
-    
+
     // Ensure credentialID is a proper Buffer
     credentialID = Buffer.isBuffer(credentialID) ? credentialID : Buffer.from(credentialID);
-    
+
     // Convert public key from base64url string to Buffer, then to Uint8Array
     // The public key is stored as base64url string representing COSE key bytes
     const publicKeyBuffer = isoBase64URL.toBuffer(userCredential.publicKey);
     const credentialPublicKey = new Uint8Array(publicKeyBuffer);
-    
+
     // Ensure counter has a default value if undefined and is a valid number
     let credentialCounter = 0;
     if (userCredential.counter !== undefined && userCredential.counter !== null) {
       credentialCounter = typeof userCredential.counter === 'number' ? userCredential.counter : parseInt(userCredential.counter, 10) || 0;
     }
-    
+
     console.log('[AUTH ROUTES] Step 4.1: Converted to buffers - credentialID type:', credentialID.constructor.name, 'length:', credentialID.length, 'publicKey type:', credentialPublicKey.constructor.name, 'length:', credentialPublicKey.length, 'counter:', credentialCounter, 'counterType:', typeof credentialCounter);
 
     // Get request origin and RP ID for verification
@@ -1142,7 +1155,7 @@ router.post('/webauthn/login/complete', async (req, res) => {
       const clientData = JSON.parse(clientDataJSON.toString());
       expectedChallenge = clientData.challenge;
       console.log('[AUTH ROUTES] Step 5.1: Extracted challenge:', expectedChallenge);
-      
+
       // Verify the challenge was issued by us
       if (!challengeStore.has(expectedChallenge)) {
         console.log('[AUTH ROUTES] Step 5.2: Challenge not found in store');
@@ -1151,7 +1164,7 @@ router.post('/webauthn/login/complete', async (req, res) => {
           message: 'Invalid or expired authentication challenge'
         });
       }
-      
+
       console.log('[AUTH ROUTES] Step 5.3: Challenge verified, removing from store');
       // Remove used challenge
       challengeStore.delete(expectedChallenge);
@@ -1167,51 +1180,51 @@ router.post('/webauthn/login/complete', async (req, res) => {
     let verification;
     try {
       // Ensure all required fields are present and valid
-    if (!credentialID || !credentialPublicKey) {
-      console.error('[AUTH ROUTES] Step 6.ERROR: Missing credential ID or public key');
-      return res.status(400).json({
-        success: false,
-        message: 'Invalid credential data'
+      if (!credentialID || !credentialPublicKey) {
+        console.error('[AUTH ROUTES] Step 6.ERROR: Missing credential ID or public key');
+        return res.status(400).json({
+          success: false,
+          message: 'Invalid credential data'
+        });
+      }
+
+      // SimpleWebAuthn v13 expects the credential object with specific property names
+      // From the library source: verifyAuthenticationResponse extracts credential.id and credential.publicKey
+      // It uses credential.id for the credentialID and credential.publicKey which it passes to verifySignature
+      const authenticatorObj = {
+        id: credentialID,  // Library extracts this as credentialID internally
+        publicKey: credentialPublicKey,  // Library extracts this and passes as credentialPublicKey to verifySignature
+        counter: credentialCounter || 0
+      };
+
+      console.log('[AUTH ROUTES] Step 6.0: Credential object:', {
+        hasId: !!authenticatorObj.id,
+        idType: authenticatorObj.id?.constructor?.name,
+        idLength: authenticatorObj.id?.length,
+        hasPublicKey: !!authenticatorObj.publicKey,
+        publicKeyType: authenticatorObj.publicKey?.constructor?.name,
+        publicKeyLength: authenticatorObj.publicKey?.length,
+        counter: authenticatorObj.counter,
+        counterType: typeof authenticatorObj.counter
       });
-    }
-    
-    // SimpleWebAuthn v13 expects the credential object with specific property names
-    // From the library source: verifyAuthenticationResponse extracts credential.id and credential.publicKey
-    // It uses credential.id for the credentialID and credential.publicKey which it passes to verifySignature
-    const authenticatorObj = {
-      id: credentialID,  // Library extracts this as credentialID internally
-      publicKey: credentialPublicKey,  // Library extracts this and passes as credentialPublicKey to verifySignature
-      counter: credentialCounter || 0
-    };
-    
-    console.log('[AUTH ROUTES] Step 6.0: Credential object:', {
-      hasId: !!authenticatorObj.id,
-      idType: authenticatorObj.id?.constructor?.name,
-      idLength: authenticatorObj.id?.length,
-      hasPublicKey: !!authenticatorObj.publicKey,
-      publicKeyType: authenticatorObj.publicKey?.constructor?.name,
-      publicKeyLength: authenticatorObj.publicKey?.length,
-      counter: authenticatorObj.counter,
-      counterType: typeof authenticatorObj.counter
-    });
-    
-    console.log('[AUTH ROUTES] Step 6.1: Calling verifyAuthenticationResponse with:', {
-      hasResponse: !!credential,
-      hasExpectedChallenge: !!expectedChallenge,
-      expectedOrigin: requestOrigin,
-      expectedRPID: requestRPID,
-      hasAuthenticator: !!authenticatorObj,
-      authenticatorKeys: Object.keys(authenticatorObj)
-    });
-    
-    verification = await verifyAuthenticationResponse({
-      response: credential,
-      expectedChallenge: expectedChallenge,
-      expectedOrigin: requestOrigin,
-      expectedRPID: requestRPID,
-      credential: authenticatorObj,  // Fixed: parameter name should be 'credential', not 'authenticator'
-      requireUserVerification: true
-    });
+
+      console.log('[AUTH ROUTES] Step 6.1: Calling verifyAuthenticationResponse with:', {
+        hasResponse: !!credential,
+        hasExpectedChallenge: !!expectedChallenge,
+        expectedOrigin: requestOrigin,
+        expectedRPID: requestRPID,
+        hasAuthenticator: !!authenticatorObj,
+        authenticatorKeys: Object.keys(authenticatorObj)
+      });
+
+      verification = await verifyAuthenticationResponse({
+        response: credential,
+        expectedChallenge: expectedChallenge,
+        expectedOrigin: requestOrigin,
+        expectedRPID: requestRPID,
+        credential: authenticatorObj,  // Fixed: parameter name should be 'credential', not 'authenticator'
+        requireUserVerification: true
+      });
       console.log('[AUTH ROUTES] Step 6.1: Verification completed, verified:', verification.verified);
     } catch (error) {
       console.error('[AUTH ROUTES] Step 6.ERROR: Authentication verification error:', error);
