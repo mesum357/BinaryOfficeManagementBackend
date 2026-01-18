@@ -7,7 +7,7 @@ const leavePolicySchema = new mongoose.Schema({
     required: true,
     unique: true
   },
-  monthlyLimit: {
+  yearlyLimit: {
     type: Number,
     required: true,
     min: 0,

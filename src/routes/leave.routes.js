@@ -135,13 +135,13 @@ router.get('/balance', protect, async (req, res) => {
     // Create a map of leave types to monthly limits from policies
     const policyMap = {};
     policies.forEach(policy => {
-      policyMap[policy.leaveType] = policy.monthlyLimit || 0;
+      policyMap[policy.leaveType] = policy.yearlyLimit || 0;
     });
 
-    // Calculate used leaves for the current month (approved leaves only)
+    // Calculate used leaves for the current year (approved leaves only)
     const now = new Date();
-    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-    const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
+    const startOfYear = new Date(now.getFullYear(), 0, 1);
+    const endOfYear = new Date(now.getFullYear(), 11, 31, 23, 59, 59, 999);
 
     // Get employee ID - handle both ObjectId and populated object cases
     const mongoose = require('mongoose');
@@ -158,9 +158,9 @@ router.get('/balance', protect, async (req, res) => {
           employee: employeeObjectId,
           status: 'approved',
           $or: [
-            { startDate: { $gte: startOfMonth, $lte: endOfMonth } },
-            { endDate: { $gte: startOfMonth, $lte: endOfMonth } },
-            { startDate: { $lte: startOfMonth }, endDate: { $gte: endOfMonth } }
+            { startDate: { $gte: startOfYear, $lte: endOfYear } },
+            { endDate: { $gte: startOfYear, $lte: endOfYear } },
+            { startDate: { $lte: startOfYear }, endDate: { $gte: endOfYear } }
           ]
         }
       },
@@ -191,16 +191,16 @@ router.get('/balance', protect, async (req, res) => {
 
     leaveTypes.forEach(type => {
       // Total/limit comes from HR policy
-      const monthlyLimit = policyMap[type] || 0;
-      // Used this month
-      const usedDaysThisMonth = usedMap[type] || 0;
+      const yearlyLimit = policyMap[type] || 0;
+      // Used this year
+      const usedDaysThisYear = usedMap[type] || 0;
       // Remaining = limit - used
-      const remainingDays = Math.max(0, monthlyLimit - usedDaysThisMonth);
+      const remainingDays = Math.max(0, yearlyLimit - usedDaysThisYear);
 
-      balance[type] = monthlyLimit; // Total limit set by HR
-      used[type] = usedDaysThisMonth; // Used this month
-      remaining[type] = remainingDays; // Remaining this month
-      totals[type] = monthlyLimit; // Same as balance for display
+      balance[type] = yearlyLimit; // Total limit set by HR
+      used[type] = usedDaysThisYear; // Used this year
+      remaining[type] = remainingDays; // Remaining this year
+      totals[type] = yearlyLimit; // Same as balance for display
     });
 
     console.log('[Leave Balance] Final response - balance:', balance, 'used:', used, 'remaining:', remaining);
@@ -212,7 +212,7 @@ router.get('/balance', protect, async (req, res) => {
         used: used, // Used this month (approved leaves)
         remaining: remaining, // Remaining = limit - used
         totals: totals, // Same as balance
-        policies: policies.map(p => ({ leaveType: p.leaveType, monthlyLimit: p.monthlyLimit }))
+        policies: policies.map(p => ({ leaveType: p.leaveType, yearlyLimit: p.yearlyLimit }))
       }
     });
   } catch (error) {
@@ -341,12 +341,12 @@ router.post('/', protect, leaveValidator, async (req, res) => {
 
     // Get HR policy for this leave type
     const policy = await LeavePolicy.findOne({ leaveType, isActive: true });
-    const monthlyLimit = policy?.monthlyLimit || 0;
+    const yearlyLimit = policy?.yearlyLimit || 0;
 
-    // Calculate used leaves for the current month
+    // Calculate used leaves for the current year
     const now = new Date();
-    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-    const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
+    const startOfYear = new Date(now.getFullYear(), 0, 1);
+    const endOfYear = new Date(now.getFullYear(), 11, 31, 23, 59, 59, 999);
 
     const usedLeaves = await Leave.aggregate([
       {
@@ -355,9 +355,9 @@ router.post('/', protect, leaveValidator, async (req, res) => {
           leaveType: leaveType,
           status: 'approved',
           $or: [
-            { startDate: { $gte: startOfMonth, $lte: endOfMonth } },
-            { endDate: { $gte: startOfMonth, $lte: endOfMonth } },
-            { startDate: { $lte: startOfMonth }, endDate: { $gte: endOfMonth } }
+            { startDate: { $gte: startOfYear, $lte: endOfYear } },
+            { endDate: { $gte: startOfYear, $lte: endOfYear } },
+            { startDate: { $lte: startOfYear }, endDate: { $gte: endOfYear } }
           ]
         }
       },
@@ -370,7 +370,7 @@ router.post('/', protect, leaveValidator, async (req, res) => {
     ]);
 
     const usedDays = usedLeaves.length > 0 ? usedLeaves[0].totalDays : 0;
-    const remainingBalance = Math.max(0, monthlyLimit - usedDays);
+    const remainingBalance = Math.max(0, yearlyLimit - usedDays);
 
     // Calculate days being requested
     let requestedDays = totalDays;
@@ -386,8 +386,8 @@ router.post('/', protect, leaveValidator, async (req, res) => {
       return res.status(400).json({
         success: false,
         message: remainingBalance === 0
-          ? `You have no ${leaveType} leave balance remaining this month. Please choose a different leave type.`
-          : `Insufficient ${leaveType} leave balance. You have ${remainingBalance} day(s) remaining this month but requested ${requestedDays} day(s).`
+          ? `You have no ${leaveType} leave balance remaining this year. Please choose a different leave type.`
+          : `Insufficient ${leaveType} leave balance. You have ${remainingBalance} day(s) remaining this year but requested ${requestedDays} day(s).`
       });
     }
 
@@ -562,12 +562,12 @@ router.put('/:id/cancel', protect, async (req, res) => {
 // @access  Private (HR or above)
 router.post('/policy', protect, isHROrAbove, async (req, res) => {
   try {
-    const { leaveType, monthlyLimit, description, isActive } = req.body;
+    const { leaveType, yearlyLimit, description, isActive } = req.body;
 
-    if (!leaveType || monthlyLimit === undefined) {
+    if (!leaveType || yearlyLimit === undefined) {
       return res.status(400).json({
         success: false,
-        message: 'Leave type and monthly limit are required'
+        message: 'Leave type and yearly limit are required'
       });
     }
 
@@ -576,7 +576,7 @@ router.post('/policy', protect, isHROrAbove, async (req, res) => {
 
     if (policy) {
       // Update existing policy
-      policy.monthlyLimit = monthlyLimit;
+      policy.yearlyLimit = yearlyLimit;
       policy.description = description || policy.description;
       policy.isActive = isActive !== undefined ? isActive : policy.isActive;
       policy.updatedBy = req.user._id;
@@ -585,7 +585,7 @@ router.post('/policy', protect, isHROrAbove, async (req, res) => {
       // Create new policy
       policy = await LeavePolicy.create({
         leaveType,
-        monthlyLimit,
+        yearlyLimit,
         description: description || '',
         isActive: isActive !== undefined ? isActive : true,
         createdBy: req.user._id,
@@ -618,7 +618,7 @@ router.post('/policy', protect, isHROrAbove, async (req, res) => {
 // @access  Private (HR or above)
 router.put('/policy/:id', protect, isHROrAbove, async (req, res) => {
   try {
-    const { monthlyLimit, description, isActive } = req.body;
+    const { yearlyLimit, description, isActive } = req.body;
 
     const policy = await LeavePolicy.findById(req.params.id);
 
@@ -629,7 +629,7 @@ router.put('/policy/:id', protect, isHROrAbove, async (req, res) => {
       });
     }
 
-    if (monthlyLimit !== undefined) policy.monthlyLimit = monthlyLimit;
+    if (yearlyLimit !== undefined) policy.yearlyLimit = yearlyLimit;
     if (description !== undefined) policy.description = description;
     if (isActive !== undefined) policy.isActive = isActive;
     policy.updatedBy = req.user._id;
