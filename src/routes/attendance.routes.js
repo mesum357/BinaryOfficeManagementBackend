@@ -352,14 +352,33 @@ router.get('/today-presence', protect, isHROrAbove, async (req, res) => {
       }
     });
 
-    const activeList = activeEmployees
+    // Separate employees into active (working), on break, and inactive
+    const activeList = [];
+    const onBreakList = [];
+
+    activeEmployees
       .filter(emp => activeEmployeeIds.has(emp._id.toString()))
-      .map(emp => {
+      .forEach(emp => {
         const attendance = attendanceMap.get(emp._id.toString());
-        return {
-          ...emp,
-          checkInTime: attendance?.checkIn?.time || null
-        };
+        const activeBreak = attendance?.breaks?.find(b => !b.endTime);
+
+        if (activeBreak) {
+          // Employee is on break
+          onBreakList.push({
+            ...emp,
+            checkInTime: attendance?.checkIn?.time || null,
+            isOnBreak: true,
+            breakReason: activeBreak.reason || 'break',
+            breakStartTime: activeBreak.startTime
+          });
+        } else {
+          // Employee is actively working
+          activeList.push({
+            ...emp,
+            checkInTime: attendance?.checkIn?.time || null,
+            isOnBreak: false
+          });
+        }
       });
 
     const inactiveList = activeEmployees
@@ -378,8 +397,10 @@ router.get('/today-presence', protect, isHROrAbove, async (req, res) => {
       data: {
         presentToday,
         active: activeList,
+        onBreak: onBreakList,
         inactive: inactiveList,
         totalActive: activeList.length,
+        totalOnBreak: onBreakList.length,
         totalInactive: inactiveList.length
       }
     });
