@@ -352,6 +352,17 @@ router.get('/today-presence', protect, isHROrAbove, async (req, res) => {
       }
     });
 
+    // Helper function to calculate total break time in minutes
+    const calculateTotalBreakTime = (breaks) => {
+      if (!breaks || breaks.length === 0) return 0;
+      return breaks.reduce((total, b) => {
+        if (b.endTime && b.duration) {
+          return total + b.duration;
+        }
+        return total;
+      }, 0);
+    };
+
     // Separate employees into active (working), on break, and inactive
     const activeList = [];
     const onBreakList = [];
@@ -361,6 +372,7 @@ router.get('/today-presence', protect, isHROrAbove, async (req, res) => {
       .forEach(emp => {
         const attendance = attendanceMap.get(emp._id.toString());
         const activeBreak = attendance?.breaks?.find(b => !b.endTime);
+        const totalBreakTime = calculateTotalBreakTime(attendance?.breaks);
 
         if (activeBreak) {
           // Employee is on break
@@ -369,14 +381,16 @@ router.get('/today-presence', protect, isHROrAbove, async (req, res) => {
             checkInTime: attendance?.checkIn?.time || null,
             isOnBreak: true,
             breakReason: activeBreak.reason || 'break',
-            breakStartTime: activeBreak.startTime
+            breakStartTime: activeBreak.startTime,
+            totalBreakTime
           });
         } else {
           // Employee is actively working
           activeList.push({
             ...emp,
             checkInTime: attendance?.checkIn?.time || null,
-            isOnBreak: false
+            isOnBreak: false,
+            totalBreakTime
           });
         }
       });
@@ -385,10 +399,12 @@ router.get('/today-presence', protect, isHROrAbove, async (req, res) => {
       .filter(emp => !activeEmployeeIds.has(emp._id.toString()))
       .map(emp => {
         const attendance = attendanceMap.get(emp._id.toString());
+        const totalBreakTime = calculateTotalBreakTime(attendance?.breaks);
         return {
           ...emp,
           isCheckedIn: !!attendance?.checkIn?.time,
-          isCheckedOut: !!attendance?.checkOut?.time
+          isCheckedOut: !!attendance?.checkOut?.time,
+          totalBreakTime
         };
       });
 
