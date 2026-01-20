@@ -77,7 +77,7 @@ router.post('/', protect, async (req, res) => {
     });
   } catch (error) {
     console.error('Error creating/updating report:', error);
-    
+
     // Handle duplicate key error (unique constraint violation)
     if (error.code === 11000) {
       return res.status(400).json({
@@ -319,7 +319,7 @@ router.get('/dashboard', protect, isHROrAbove, async (req, res) => {
     const Attendance = require('../models/Attendance');
     const Leave = require('../models/Leave');
     const User = require('../models/User');
-    
+
     // Count only employees that actually use the Employee Website:
     // approved users with role 'employee' mapped to an Employee doc.
     const usersWithEmployeeAccounts = await User.find({
@@ -336,7 +336,7 @@ router.get('/dashboard', protect, isHROrAbove, async (req, res) => {
       status: 'active'
     });
     const pendingLeaves = await Leave.countDocuments({ status: 'pending' });
-    
+
     res.json({
       success: true,
       data: {
@@ -360,7 +360,7 @@ router.get('/attendance', protect, isHROrAbove, async (req, res) => {
   try {
     const { startDate, endDate } = req.query;
     const Attendance = require('../models/Attendance');
-    
+
     const dateQuery = {};
     if (startDate || endDate) {
       dateQuery.date = {};
@@ -373,32 +373,32 @@ router.get('/attendance', protect, isHROrAbove, async (req, res) => {
       {
         $group: {
           _id: { $dateToString: { format: '%Y-%m-%d', date: '$date' } },
-          present: { 
-            $sum: { 
+          present: {
+            $sum: {
               $cond: [
-                { $in: ['$status', ['present', 'late']] }, 
-                1, 
+                { $in: ['$status', ['present', 'late']] },
+                1,
                 0
-              ] 
-            } 
+              ]
+            }
           },
-          absent: { 
-            $sum: { 
+          absent: {
+            $sum: {
               $cond: [
-                { $eq: ['$status', 'absent'] }, 
-                1, 
+                { $eq: ['$status', 'absent'] },
+                1,
                 0
-              ] 
-            } 
+              ]
+            }
           },
-          onLeave: { 
-            $sum: { 
+          onLeave: {
+            $sum: {
               $cond: [
-                { $eq: ['$status', 'on-leave'] }, 
-                1, 
+                { $eq: ['$status', 'on-leave'] },
+                1,
                 0
-              ] 
-            } 
+              ]
+            }
           }
         }
       },
@@ -425,7 +425,7 @@ router.get('/leave', protect, isHROrAbove, async (req, res) => {
   try {
     const Leave = require('../models/Leave');
     const { startDate, endDate } = req.query;
-    
+
     const query = {};
     if (startDate || endDate) {
       query.startDate = {};
@@ -480,13 +480,13 @@ router.get('/department', protect, isHROrAbove, async (req, res) => {
   try {
     const Department = require('../models/Department');
     const Employee = require('../models/Employee');
-    
+
     const departments = await Department.find().lean();
     const departmentStats = await Promise.all(
       departments.map(async (dept) => {
-        const employeeCount = await Employee.countDocuments({ 
-          department: dept._id, 
-          status: 'active' 
+        const employeeCount = await Employee.countDocuments({
+          department: dept._id,
+          status: 'active'
         });
         return {
           ...dept,
@@ -516,7 +516,7 @@ router.get('/employee/:id', protect, isHROrAbove, async (req, res) => {
     const Employee = require('../models/Employee');
     const Attendance = require('../models/Attendance');
     const Leave = require('../models/Leave');
-    
+
     const employee = await Employee.findById(req.params.id);
     if (!employee) {
       return res.status(404).json({
@@ -550,12 +550,12 @@ router.get('/employee/:id', protect, isHROrAbove, async (req, res) => {
 // @access  Private (HR or above)
 router.get('/', protect, isHROrAbove, async (req, res) => {
   try {
-    const { 
-      employee, 
-      startDate, 
+    const {
+      employee,
+      startDate,
       endDate,
-      page = 1, 
-      limit = 50 
+      page = 1,
+      limit = 50
     } = req.query;
 
     const query = {};
@@ -735,6 +735,142 @@ router.get('/stats', protect, isHROrAbove, async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Error fetching report statistics',
+      error: error.message
+    });
+  }
+});
+
+// @route   POST /api/reports/employee/:employeeId
+// @desc    Create/update report for a specific employee (Manager only)
+// @access  Private (Manager with department = 'Manager')
+router.post('/employee/:employeeId', protect, async (req, res) => {
+  try {
+    // Check if user is a manager by department name
+    const userDeptName = req.user.employee?.department?.name || req.user.employee?.department;
+    const isManager = typeof userDeptName === 'string' && userDeptName.toLowerCase() === 'manager';
+
+    if (!isManager) {
+      return res.status(403).json({
+        success: false,
+        message: 'Only managers can update employee reports'
+      });
+    }
+
+    const { headset, sales } = req.body;
+    const employeeId = req.params.employeeId;
+
+    // Verify employee exists
+    const Employee = require('../models/Employee');
+    const employee = await Employee.findById(employeeId);
+    if (!employee) {
+      return res.status(404).json({
+        success: false,
+        message: 'Employee not found'
+      });
+    }
+
+    // Get today's date at midnight
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    // Check if report already exists for today
+    const existingReport = await Report.findOne({
+      employee: employeeId,
+      date: {
+        $gte: today,
+        $lt: new Date(today.getTime() + 24 * 60 * 60 * 1000)
+      }
+    });
+
+    if (existingReport) {
+      // Update existing report
+      existingReport.headset = headset || 0;
+      existingReport.sales = sales || 0;
+      existingReport.updatedBy = req.user._id;
+      await existingReport.save();
+
+      await existingReport.populate({
+        path: 'employee',
+        select: 'firstName lastName employeeId department',
+        populate: { path: 'department', select: 'name' }
+      });
+
+      return res.json({
+        success: true,
+        message: `Report updated for ${employee.firstName} ${employee.lastName}`,
+        data: { report: existingReport }
+      });
+    }
+
+    // Create new report
+    const report = await Report.create({
+      employee: employeeId,
+      date: today,
+      headset: headset || 0,
+      sales: sales || 0,
+      createdBy: req.user._id
+    });
+
+    await report.populate({
+      path: 'employee',
+      select: 'firstName lastName employeeId department',
+      populate: { path: 'department', select: 'name' }
+    });
+
+    res.status(201).json({
+      success: true,
+      message: `Report submitted for ${employee.firstName} ${employee.lastName}`,
+      data: { report }
+    });
+  } catch (error) {
+    console.error('Error creating/updating employee report:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error submitting employee report',
+      error: error.message
+    });
+  }
+});
+
+// @route   GET /api/reports/employee/:employeeId/today
+// @desc    Get today's report for a specific employee (Manager only)
+// @access  Private (Manager with department = 'Manager')
+router.get('/employee/:employeeId/today', protect, async (req, res) => {
+  try {
+    // Check if user is a manager by department name
+    const userDeptName = req.user.employee?.department?.name || req.user.employee?.department;
+    const isManager = typeof userDeptName === 'string' && userDeptName.toLowerCase() === 'manager';
+
+    if (!isManager) {
+      return res.status(403).json({
+        success: false,
+        message: 'Only managers can view employee reports'
+      });
+    }
+
+    const employeeId = req.params.employeeId;
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const report = await Report.findOne({
+      employee: employeeId,
+      date: {
+        $gte: today,
+        $lt: new Date(today.getTime() + 24 * 60 * 60 * 1000)
+      }
+    })
+      .populate('employee', 'firstName lastName employeeId')
+      .lean();
+
+    res.json({
+      success: true,
+      data: { report }
+    });
+  } catch (error) {
+    console.error('Error fetching employee report:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching employee report',
       error: error.message
     });
   }
