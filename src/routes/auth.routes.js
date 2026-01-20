@@ -80,22 +80,40 @@ router.post('/register', registerValidator, async (req, res) => {
       });
     }
 
-    // Validate department exists
+    // Validate department - accept both ObjectId and string name
     let dept;
     const mongoose = require('mongoose');
+
+    // List of valid department names for sign-up
+    const validDepartments = ['HR', 'Manager', 'Agent', 'Closure', 'Developer', 'SEO Expert', 'Intern'];
+
     if (mongoose.Types.ObjectId.isValid(department)) {
       dept = await Department.findById(department);
     } else {
-      // Fallback: Check by name if it's a string name (like from old hardcoded frontend)
-      dept = await Department.findOne({
-        name: { $regex: new RegExp(`^${department}$`, 'i') }
-      });
+      // Check if it's a valid department name
+      const isValidName = validDepartments.some(d => d.toLowerCase() === department.toLowerCase());
+      if (isValidName) {
+        // Try to find existing department or create one
+        dept = await Department.findOne({
+          name: { $regex: new RegExp(`^${department}$`, 'i') }
+        });
+
+        // If department doesn't exist, create it
+        if (!dept) {
+          dept = await Department.create({
+            name: department,
+            code: department.toUpperCase().replace(/\s+/g, '_').substring(0, 3),
+            description: `${department} Department`,
+            isActive: true
+          });
+        }
+      }
     }
 
     if (!dept) {
       return res.status(400).json({
         success: false,
-        message: 'Invalid department selected'
+        message: 'Invalid department selected. Valid options: ' + validDepartments.join(', ')
       });
     }
 

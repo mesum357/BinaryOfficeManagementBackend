@@ -9,13 +9,20 @@ const router = express.Router();
 // @access  Public
 router.get('/', async (req, res) => {
   try {
-    const departments = await Department.find({ isActive: true })
-      .select('name code description')
-      .sort({ name: 1 });
+    // Return hardcoded department options for sign-up form
+    const signupDepartments = [
+      { _id: 'HR', name: 'HR' },
+      { _id: 'Manager', name: 'Manager' },
+      { _id: 'Agent', name: 'Agent' },
+      { _id: 'Closure', name: 'Closure' },
+      { _id: 'Developer', name: 'Developer' },
+      { _id: 'SEO Expert', name: 'SEO Expert' },
+      { _id: 'Intern', name: 'Intern' }
+    ];
 
     res.json({
       success: true,
-      data: { departments }
+      data: { departments: signupDepartments }
     });
   } catch (error) {
     res.status(500).json({
