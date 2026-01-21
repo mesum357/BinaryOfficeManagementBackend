@@ -876,4 +876,70 @@ router.get('/employee/:employeeId/today', protect, async (req, res) => {
   }
 });
 
+// @route   GET /api/reports/manager/updated
+// @desc    Get reports created/updated by the manager
+// @access  Private (Manager with department = 'Manager')
+router.get('/manager/updated', protect, async (req, res) => {
+  try {
+    // Check if user is a manager by department name
+    const userDeptName = req.user.employee?.department?.name || req.user.employee?.department;
+    const isManager = typeof userDeptName === 'string' && userDeptName.toLowerCase() === 'manager';
+
+    if (!isManager) {
+      return res.status(403).json({
+        success: false,
+        message: 'Only managers can access this endpoint'
+      });
+    }
+
+    const { page = 1, limit = 30 } = req.query;
+
+    // Get reports created or updated by this manager
+    const reports = await Report.find({
+      $or: [
+        { createdBy: req.user._id },
+        { updatedBy: req.user._id }
+      ]
+    })
+      .populate({
+        path: 'employee',
+        select: 'firstName lastName employeeId department',
+        populate: { path: 'department', select: 'name' }
+      })
+      .select('-__v')
+      .sort({ date: -1, updatedAt: -1 })
+      .skip((page - 1) * limit)
+      .limit(parseInt(limit))
+      .lean();
+
+    const total = await Report.countDocuments({
+      $or: [
+        { createdBy: req.user._id },
+        { updatedBy: req.user._id }
+      ]
+    });
+
+    res.json({
+      success: true,
+      data: {
+        reports,
+        pagination: {
+          page: parseInt(page),
+          limit: parseInt(limit),
+          total,
+          pages: Math.ceil(total / limit)
+        }
+      }
+    });
+  } catch (error) {
+    console.error('Error fetching manager updated reports:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching manager updated reports',
+      error: error.message
+    });
+  }
+});
+
 module.exports = router;
+

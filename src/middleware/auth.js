@@ -21,8 +21,11 @@ const protect = async (req, res, next) => {
     // Verify token
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
-    // Get user from token
-    const user = await User.findById(decoded.id).populate('employee');
+    // Get user from token - populate employee and nested department
+    const user = await User.findById(decoded.id).populate({
+      path: 'employee',
+      populate: { path: 'department', select: 'name' }
+    });
 
     if (!user) {
       return res.status(401).json({
