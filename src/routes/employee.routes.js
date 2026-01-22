@@ -438,7 +438,7 @@ router.put('/:id/terminate', protect, isHROrAbove, async (req, res) => {
 });
 
 // @route   DELETE /api/employees/:id
-// @desc    Delete employee permanently
+// @desc    Delete employee permanently with cascade delete of all related data
 // @access  Private (HR or above)
 router.delete('/:id', protect, isHROrAbove, async (req, res) => {
   try {
@@ -451,15 +451,57 @@ router.delete('/:id', protect, isHROrAbove, async (req, res) => {
       });
     }
 
+    const employeeId = req.params.id;
+
+    // Import all related models for cascade delete
+    const Attendance = require('../models/Attendance');
+    const Task = require('../models/Task');
+    const Ticket = require('../models/Ticket');
+    const Leave = require('../models/Leave');
+    const Report = require('../models/Report');
+    const Chat = require('../models/Chat');
+    const MessageRequest = require('../models/MessageRequest');
+    const Meeting = require('../models/Meeting');
+
+    // Cascade delete all related data
+    await Promise.all([
+      // Delete all attendance records for this employee
+      Attendance.deleteMany({ employee: employeeId }),
+
+      // Delete all tasks assigned to or created by this employee
+      Task.deleteMany({ $or: [{ assignedTo: employeeId }, { createdBy: employeeId }] }),
+
+      // Delete all tickets created by this employee
+      Ticket.deleteMany({ createdBy: employeeId }),
+
+      // Delete all leave requests by this employee
+      Leave.deleteMany({ employee: employeeId }),
+
+      // Delete all reports for this employee
+      Report.deleteMany({ employee: employeeId }),
+
+      // Delete all chat messages sent by this employee
+      Chat.deleteMany({ sender: employeeId }),
+
+      // Delete all message requests from/to this employee
+      MessageRequest.deleteMany({ $or: [{ from: employeeId }, { to: employeeId }] }),
+
+      // Remove employee from meetings (update meetings to remove this employee from attendees)
+      Meeting.updateMany(
+        { 'attendees.employee': employeeId },
+        { $pull: { attendees: { employee: employeeId } } }
+      )
+    ]);
+
     // Delete associated user account
-    await User.findOneAndDelete({ employee: req.params.id });
+    await User.findOneAndDelete({ employee: employeeId });
 
     // Delete employee record
-    await Employee.findByIdAndDelete(req.params.id);
+    await Employee.findByIdAndDelete(employeeId);
 
     res.json({
       success: true,
-      message: 'Employee deleted successfully'
+      message: 'Employee and all related data deleted successfully'
     });
   } catch (error) {
     res.status(500).json({
