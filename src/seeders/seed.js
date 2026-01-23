@@ -39,12 +39,12 @@ const seedDatabase = async () => {
     const employees = await Employee.insertMany([
       {
         employeeId: 'EMP0001',
-        firstName: 'Admin',
+        firstName: 'Founder',
         lastName: 'User',
-        email: 'admin@company.com',
+        email: 'admin@mmh.com',
         phone: '03001234567',
         department: departments[0]._id,
-        designation: 'System Administrator',
+        designation: 'Founder',
         dateOfJoining: new Date('2020-01-01'),
         gender: 'male',
         status: 'active'
@@ -53,7 +53,7 @@ const seedDatabase = async () => {
         employeeId: 'EMP0002',
         firstName: 'Sarah',
         lastName: 'Khan',
-        email: 'hr@company.com',
+        email: 'hr@mmh.com',
         phone: '03001234568',
         department: departments[0]._id,
         designation: 'HR Manager',
@@ -63,9 +63,9 @@ const seedDatabase = async () => {
       },
       {
         employeeId: 'EMP0003',
-        firstName: 'Ahmed',
-        lastName: 'Ali',
-        email: 'boss@company.com',
+        firstName: 'CEO',
+        lastName: 'User',
+        email: 'ceo@mmh.com',
         phone: '03001234569',
         department: departments[4]._id,
         designation: 'CEO',
@@ -130,12 +130,12 @@ const seedDatabase = async () => {
 
     // Create or update Users with hashed passwords
     // Delete existing seed users first to ensure clean state
-    await User.deleteMany({ 
-      email: { 
+    await User.deleteMany({
+      email: {
         $in: [
-          'admin@company.com',
-          'hr@company.com',
-          'boss@company.com',
+          'admin@mmh.com',
+          'hr@mmh.com',
+          'ceo@mmh.com',
           'manager@company.com',
           'employee@company.com',
           'ayesha@company.com',
@@ -148,7 +148,7 @@ const seedDatabase = async () => {
     const users = [];
     const userData = [
       {
-        email: 'admin@company.com',
+        email: 'admin@mmh.com',
         password: 'password123', // Will be hashed by pre-save hook
         role: 'admin',
         employee: employees[0]._id,
@@ -156,7 +156,7 @@ const seedDatabase = async () => {
         isActive: true
       },
       {
-        email: 'hr@company.com',
+        email: 'hr@mmh.com',
         password: 'password123',
         role: 'hr',
         employee: employees[1]._id,
@@ -164,7 +164,7 @@ const seedDatabase = async () => {
         isActive: true
       },
       {
-        email: 'boss@company.com',
+        email: 'ceo@mmh.com',
         password: 'password123',
         role: 'boss',
         employee: employees[2]._id,
@@ -282,7 +282,7 @@ const seedDatabase = async () => {
     // Create today's attendance for some employees
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-    
+
     await Attendance.insertMany([
       {
         employee: employees[0]._id,
@@ -308,9 +308,9 @@ const seedDatabase = async () => {
     console.log('\n🎉 Database seeding completed successfully!\n');
     console.log('📋 Test Accounts:');
     console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-    console.log('Admin:    admin@company.com    / password123');
-    console.log('HR:       hr@company.com       / password123');
-    console.log('Boss:     boss@company.com     / password123');
+    console.log('Founder:  admin@mmh.com    / password123');
+    console.log('HR:       hr@mmh.com       / password123');
+    console.log('CEO:      ceo@mmh.com      / password123');
     console.log('Manager:  manager@company.com  / password123');
     console.log('Employee: employee@company.com / password123');
     console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
