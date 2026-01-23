@@ -60,10 +60,22 @@ router.get('/', protect, async (req, res) => {
 
     const total = await Employee.countDocuments(query);
 
+    // Get isActive status for each employee
+    const users = await User.find({ employee: { $in: employees.map(e => e._id) } }).select('employee isActive');
+    const userMap = users.reduce((acc, user) => {
+      acc[user.employee.toString()] = user.isActive;
+      return acc;
+    }, {});
+
+    const employeesWithAccountStatus = employees.map(emp => ({
+      ...emp,
+      isActive: userMap[emp._id.toString()] !== undefined ? userMap[emp._id.toString()] : false
+    }));
+
     res.json({
       success: true,
       data: {
-        employees,
+        employees: employeesWithAccountStatus,
         pagination: {
           page: parseInt(page),
           limit: parseInt(limit),
@@ -202,7 +214,14 @@ router.get('/with-status', protect, isHROrAbove, async (req, res) => {
       date: { $gte: today, $lt: tomorrow }
     });
 
-    // Map attendance status to employees
+    // Get isActive status for these employees
+    const usersForStatus = await User.find({ employee: { $in: employees.map(e => e._id) } }).select('employee isActive');
+    const userStatusMap = usersForStatus.reduce((acc, user) => {
+      acc[user.employee.toString()] = user.isActive;
+      return acc;
+    }, {});
+
+    // Map attendance status and isActive status to employees
     const employeesWithStatus = employees.map(emp => {
       const attendance = attendanceRecords.find(a => a.employee.toString() === emp._id.toString());
 
@@ -227,7 +246,8 @@ router.get('/with-status', protect, isHROrAbove, async (req, res) => {
 
       return {
         ...emp,
-        attendanceStatus: realTimeStatus
+        attendanceStatus: realTimeStatus,
+        isActive: userStatusMap[emp._id.toString()] !== undefined ? userStatusMap[emp._id.toString()] : false
       };
     });
 
@@ -432,6 +452,44 @@ router.put('/:id/terminate', protect, isHROrAbove, async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Error terminating employee',
+      error: error.message
+    });
+  }
+});
+
+// @route   PUT /api/employees/:id/unterminate
+// @desc    Unterminate employee (set status to active)
+// @access  Private (HR or above)
+router.put('/:id/unterminate', protect, isHROrAbove, async (req, res) => {
+  try {
+    const employee = await Employee.findByIdAndUpdate(
+      req.params.id,
+      { status: 'active' },
+      { new: true }
+    );
+
+    if (!employee) {
+      return res.status(404).json({
+        success: false,
+        message: 'Employee not found'
+      });
+    }
+
+    // Reactivate user account
+    await User.findOneAndUpdate(
+      { employee: req.params.id },
+      { isActive: true }
+    );
+
+    res.json({
+      success: true,
+      message: 'Employee unterminated successfully',
+      data: { employee }
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Error unterminating employee',
       error: error.message
     });
   }
