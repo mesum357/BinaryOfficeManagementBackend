@@ -194,7 +194,7 @@ router.get('/with-status', protect, isHROrAbove, async (req, res) => {
     const employeeIds = users.map(u => u.employee);
 
     query._id = { $in: employeeIds };
-    query.status = 'active';
+    query.status = { $in: ['active', 'on-leave', 'terminated'] };
 
     const employees = await Employee.find(query)
       .populate('department', 'name code')
