@@ -138,13 +138,12 @@ router.post('/check-in', protect, async (req, res) => {
 
     const checkInTime = new Date();
     const workStartTime = new Date();
-    workStartTime.setHours(9, 0, 0, 0); // 9:00 AM
+    workStartTime.setHours(7, 5, 0, 0); // 7:05 AM
 
     // Determine status based on check-in time
     let status = 'present';
     if (checkInTime > workStartTime) {
-      const lateMinutes = (checkInTime - workStartTime) / (1000 * 60);
-      if (lateMinutes > 30) status = 'late';
+      status = 'late';
     }
 
     if (attendance) {
