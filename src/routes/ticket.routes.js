@@ -2,6 +2,7 @@ const express = require('express');
 const mongoose = require('mongoose');
 const Ticket = require('../models/Ticket');
 const Employee = require('../models/Employee');
+const User = require('../models/User');
 const { protect, isHROrAbove } = require('../middleware/auth');
 
 const router = express.Router();
@@ -85,12 +86,12 @@ router.post('/', protect, async (req, res) => {
     let ticket;
     let attempts = 0;
     const maxAttempts = 5;
-    
+
     while (attempts < maxAttempts) {
       try {
         const lastTicket = await Ticket.findOne().sort({ ticketNumber: -1 }).lean();
         let ticketNum = 1;
-        
+
         if (lastTicket && lastTicket.ticketNumber) {
           const lastNum = parseInt(lastTicket.ticketNumber.replace('TKT-', ''), 10);
           if (!isNaN(lastNum) && lastNum > 0) {
@@ -99,7 +100,7 @@ router.post('/', protect, async (req, res) => {
         } else {
           ticketNum = 1 + attempts;
         }
-        
+
         const ticketNumber = `TKT-${String(ticketNum).padStart(6, '0')}`;
 
         ticket = await Ticket.create({
@@ -111,7 +112,7 @@ router.post('/', protect, async (req, res) => {
           description: description.trim(),
           status: 'open'
         });
-        
+
         // Successfully created, break out of retry loop
         break;
       } catch (createError) {
@@ -124,7 +125,7 @@ router.post('/', protect, async (req, res) => {
         throw createError;
       }
     }
-    
+
     if (!ticket) {
       return res.status(500).json({
         success: false,
@@ -139,6 +140,29 @@ router.post('/', protect, async (req, res) => {
       populate: { path: 'department', select: 'name' }
     });
 
+    // Emit socket event to management users
+    const io = req.app.get('io');
+    if (io) {
+      // Find all users with management/HR roles
+      const managementUsers = await User.find({
+        role: { $in: ['hr', 'manager', 'boss', 'admin'] }
+      }).select('_id');
+
+      managementUsers.forEach(mUser => {
+        io.to(mUser._id.toString()).emit('newTicket', {
+          id: ticket._id,
+          ticketNumber: ticket.ticketNumber,
+          subject: ticket.subject,
+          category: ticket.category,
+          priority: ticket.priority,
+          employee: {
+            firstName: ticket.employee.firstName,
+            lastName: ticket.employee.lastName
+          }
+        });
+      });
+    }
+
     res.status(201).json({
       success: true,
       message: 'Ticket created successfully',
@@ -147,7 +171,7 @@ router.post('/', protect, async (req, res) => {
   } catch (error) {
     console.error('Error creating ticket:', error);
     console.error('Error stack:', error.stack);
-    
+
     // Handle specific MongoDB errors
     if (error.name === 'ValidationError') {
       return res.status(400).json({
@@ -156,7 +180,7 @@ router.post('/', protect, async (req, res) => {
         error: Object.values(error.errors).map(err => err.message).join(', ')
       });
     }
-    
+
     if (error.code === 11000) {
       return res.status(400).json({
         success: false,
@@ -178,9 +202,9 @@ router.post('/', protect, async (req, res) => {
 router.get('/', protect, async (req, res) => {
   try {
     const { status, category, priority, page = 1, limit = 20 } = req.query;
-    
+
     const query = {};
-    
+
     // Non-HR users can only see their own tickets
     if (!['hr', 'manager', 'boss', 'admin'].includes(req.user.role)) {
       query.employee = req.user.employee?._id || req.user.employee;
@@ -322,8 +346,8 @@ router.get('/:id', protect, async (req, res) => {
 
     // Check if user has access to this ticket
     const userEmployeeId = req.user.employee?._id?.toString() || req.user.employee?.toString();
-    if (!['hr', 'manager', 'boss', 'admin'].includes(req.user.role) && 
-        ticket.employee._id.toString() !== userEmployeeId) {
+    if (!['hr', 'manager', 'boss', 'admin'].includes(req.user.role) &&
+      ticket.employee._id.toString() !== userEmployeeId) {
       return res.status(403).json({
         success: false,
         message: 'Not authorized to view this ticket'
@@ -411,7 +435,7 @@ router.put('/:id/status', protect, isHROrAbove, async (req, res) => {
     }
 
     ticket.status = status;
-    
+
     if (status === 'resolved' && !ticket.resolvedAt) {
       ticket.resolvedBy = req.user._id;
       ticket.resolvedAt = new Date();

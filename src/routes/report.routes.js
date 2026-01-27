@@ -769,16 +769,22 @@ router.post('/employee/:employeeId', protect, async (req, res) => {
       });
     }
 
-    // Get today's date at midnight
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    // Use provided date or today's date at midnight
+    const reportDate = req.body.date ? new Date(req.body.date) : new Date();
+    if (isNaN(reportDate.getTime())) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid date format'
+      });
+    }
+    reportDate.setHours(0, 0, 0, 0);
 
-    // Check if report already exists for today
+    // Check if report already exists for the given date
     const existingReport = await Report.findOne({
       employee: employeeId,
       date: {
-        $gte: today,
-        $lt: new Date(today.getTime() + 24 * 60 * 60 * 1000)
+        $gte: reportDate,
+        $lt: new Date(reportDate.getTime() + 24 * 60 * 60 * 1000)
       }
     });
 
@@ -805,7 +811,7 @@ router.post('/employee/:employeeId', protect, async (req, res) => {
     // Create new report
     const report = await Report.create({
       employee: employeeId,
-      date: today,
+      date: reportDate,
       headset: headset || 0,
       sales: sales || 0,
       createdBy: req.user._id
@@ -849,14 +855,24 @@ router.get('/employee/:employeeId/today', protect, async (req, res) => {
     }
 
     const employeeId = req.params.employeeId;
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    const { date } = req.query;
+
+    // Use provided date or today's date at midnight
+    const reportDate = date ? new Date(date) : new Date();
+    if (isNaN(reportDate.getTime())) {
+      console.error('Invalid date provided:', date);
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid date format'
+      });
+    }
+    reportDate.setHours(0, 0, 0, 0);
 
     const report = await Report.findOne({
       employee: employeeId,
       date: {
-        $gte: today,
-        $lt: new Date(today.getTime() + 24 * 60 * 60 * 1000)
+        $gte: reportDate,
+        $lt: new Date(reportDate.getTime() + 24 * 60 * 60 * 1000)
       }
     })
       .populate('employee', 'firstName lastName employeeId')
