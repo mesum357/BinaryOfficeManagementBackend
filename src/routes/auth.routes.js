@@ -85,7 +85,7 @@ router.post('/register', registerValidator, async (req, res) => {
     const mongoose = require('mongoose');
 
     // List of valid department names for sign-up
-    const validDepartments = ['HR', 'Manager', 'Agent', 'Closure', 'Developer', 'SEO Expert', 'Intern'];
+    const validDepartments = ['Backend', 'Sales'];
 
     if (mongoose.Types.ObjectId.isValid(department)) {
       dept = await Department.findById(department);

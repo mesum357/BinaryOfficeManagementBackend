@@ -23,6 +23,11 @@ if (!fs.existsSync(documentsDir)) {
   fs.mkdirSync(documentsDir, { recursive: true });
 }
 
+const leavesDir = path.join(uploadsDir, 'leaves');
+if (!fs.existsSync(leavesDir)) {
+  fs.mkdirSync(leavesDir, { recursive: true });
+}
+
 // Configure storage for tasks
 const taskStorage = multer.diskStorage({
   destination: (req, file, cb) => {
@@ -53,6 +58,17 @@ const documentStorage = multer.diskStorage({
   filename: (req, file, cb) => {
     const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
     cb(null, `doc-${uniqueSuffix}${path.extname(file.originalname)}`);
+  }
+});
+
+// Configure storage for leave attachments
+const leaveStorage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    cb(null, leavesDir);
+  },
+  filename: (req, file, cb) => {
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    cb(null, `leave-${uniqueSuffix}${path.extname(file.originalname)}`);
   }
 });
 
@@ -114,5 +130,14 @@ const documentUpload = multer({
   fileFilter: chatFileFilter // Reusing chatFileFilter as it allows images and docs (including PDF)
 });
 
-module.exports = { upload, chatUpload, documentUpload };
+// Upload middleware for leave attachments (images only)
+const leaveUpload = multer({
+  storage: leaveStorage,
+  limits: {
+    fileSize: 5 * 1024 * 1024 // 5MB limit
+  },
+  fileFilter: imageFileFilter
+});
+
+module.exports = { upload, chatUpload, documentUpload, leaveUpload };
 

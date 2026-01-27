@@ -4,6 +4,7 @@ const LeavePolicy = require('../models/LeavePolicy');
 const Employee = require('../models/Employee');
 const { protect, isHROrAbove } = require('../middleware/auth');
 const { leaveValidator } = require('../middleware/validators');
+const { leaveUpload } = require('../config/upload');
 
 const router = express.Router();
 
@@ -125,32 +126,19 @@ router.get('/pending', protect, isHROrAbove, async (req, res) => {
 });
 
 // @route   GET /api/leaves/balance
-// @desc    Get leave balance showing HR policy limits and used/remaining for current month
+// @desc    Get leave balance (simplified - showing only used days)
 // @access  Private
 router.get('/balance', protect, async (req, res) => {
   try {
-    // Fetch all active leave policies set by HR
-    const policies = await LeavePolicy.find({ isActive: true }).lean();
-
-    // Create a map of leave types to monthly limits from policies
-    const policyMap = {};
-    policies.forEach(policy => {
-      policyMap[policy.leaveType] = policy.yearlyLimit || 0;
-    });
-
-    // Calculate used leaves for the current year (approved leaves only)
     const now = new Date();
     const startOfYear = new Date(now.getFullYear(), 0, 1);
     const endOfYear = new Date(now.getFullYear(), 11, 31, 23, 59, 59, 999);
 
-    // Get employee ID - handle both ObjectId and populated object cases
     const mongoose = require('mongoose');
     const employeeId = req.user.employee?._id || req.user.employee;
     const employeeObjectId = mongoose.Types.ObjectId.isValid(employeeId)
       ? new mongoose.Types.ObjectId(employeeId)
       : employeeId;
-
-    console.log('[Leave Balance] Fetching balance for employee:', employeeObjectId);
 
     const usedLeaves = await Leave.aggregate([
       {
@@ -159,8 +147,7 @@ router.get('/balance', protect, async (req, res) => {
           status: 'approved',
           $or: [
             { startDate: { $gte: startOfYear, $lte: endOfYear } },
-            { endDate: { $gte: startOfYear, $lte: endOfYear } },
-            { startDate: { $lte: startOfYear }, endDate: { $gte: endOfYear } }
+            { endDate: { $gte: startOfYear, $lte: endOfYear } }
           ]
         }
       },
@@ -172,51 +159,19 @@ router.get('/balance', protect, async (req, res) => {
       }
     ]);
 
-    console.log('[Leave Balance] Used leaves aggregation result:', usedLeaves);
-
-    // Create a map of used leaves by type
     const usedMap = {};
     usedLeaves.forEach(item => {
       usedMap[item._id] = item.totalDays;
     });
 
-    // Build balance object based on HR policies
-    const balance = {};
-    const used = {};
-    const remaining = {};
-    const totals = {};
-
-    // All leave types
-    const leaveTypes = ['annual', 'sick', 'casual', 'maternity', 'paternity', 'unpaid', 'other'];
-
-    leaveTypes.forEach(type => {
-      // Total/limit comes from HR policy
-      const yearlyLimit = policyMap[type] || 0;
-      // Used this year
-      const usedDaysThisYear = usedMap[type] || 0;
-      // Remaining = limit - used
-      const remainingDays = Math.max(0, yearlyLimit - usedDaysThisYear);
-
-      balance[type] = yearlyLimit; // Total limit set by HR
-      used[type] = usedDaysThisYear; // Used this year
-      remaining[type] = remainingDays; // Remaining this year
-      totals[type] = yearlyLimit; // Same as balance for display
-    });
-
-    console.log('[Leave Balance] Final response - balance:', balance, 'used:', used, 'remaining:', remaining);
-
     res.json({
       success: true,
       data: {
-        balance: balance, // Total limit from HR policies
-        used: used, // Used this month (approved leaves)
-        remaining: remaining, // Remaining = limit - used
-        totals: totals, // Same as balance
-        policies: policies.map(p => ({ leaveType: p.leaveType, yearlyLimit: p.yearlyLimit }))
+        used: usedMap,
+        message: 'Leave balance logic simplified. Showing used days only.'
       }
     });
   } catch (error) {
-    console.error('Error fetching leave balance:', error);
     res.status(500).json({
       success: false,
       message: 'Error fetching leave balance',
@@ -335,64 +290,21 @@ router.get('/:id', protect, async (req, res) => {
 // @route   POST /api/leaves
 // @desc    Create leave request
 // @access  Private
-router.post('/', protect, leaveValidator, async (req, res) => {
+router.post('/', protect, leaveUpload.single('image'), leaveValidator, async (req, res) => {
   try {
-    const { leaveType, startDate, endDate, totalDays } = req.body;
+    const leaveData = { ...req.body };
 
-    // Get HR policy for this leave type
-    const policy = await LeavePolicy.findOne({ leaveType, isActive: true });
-    const yearlyLimit = policy?.yearlyLimit || 0;
-
-    // Calculate used leaves for the current year
-    const now = new Date();
-    const startOfYear = new Date(now.getFullYear(), 0, 1);
-    const endOfYear = new Date(now.getFullYear(), 11, 31, 23, 59, 59, 999);
-
-    const usedLeaves = await Leave.aggregate([
-      {
-        $match: {
-          employee: req.user.employee,
-          leaveType: leaveType,
-          status: 'approved',
-          $or: [
-            { startDate: { $gte: startOfYear, $lte: endOfYear } },
-            { endDate: { $gte: startOfYear, $lte: endOfYear } },
-            { startDate: { $lte: startOfYear }, endDate: { $gte: endOfYear } }
-          ]
-        }
-      },
-      {
-        $group: {
-          _id: null,
-          totalDays: { $sum: '$totalDays' }
-        }
-      }
-    ]);
-
-    const usedDays = usedLeaves.length > 0 ? usedLeaves[0].totalDays : 0;
-    const remainingBalance = Math.max(0, yearlyLimit - usedDays);
-
-    // Calculate days being requested
-    let requestedDays = totalDays;
-    if (!requestedDays && startDate && endDate) {
-      const start = new Date(startDate);
-      const end = new Date(endDate);
-      const diffTime = Math.abs(end - start);
-      requestedDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
-    }
-
-    // Check if employee has sufficient balance (skip check for unpaid leave)
-    if (leaveType !== 'unpaid' && remainingBalance < requestedDays) {
-      return res.status(400).json({
-        success: false,
-        message: remainingBalance === 0
-          ? `You have no ${leaveType} leave balance remaining this year. Please choose a different leave type.`
-          : `Insufficient ${leaveType} leave balance. You have ${remainingBalance} day(s) remaining this year but requested ${requestedDays} day(s).`
-      });
+    // If an image was uploaded, add it to attachments
+    if (req.file) {
+      const baseUrl = `${req.protocol}://${req.get('host')}`;
+      leaveData.attachments = [{
+        name: req.file.originalname,
+        url: `${baseUrl}/uploads/leaves/${req.file.filename}`
+      }];
     }
 
     const leave = await Leave.create({
-      ...req.body,
+      ...leaveData,
       employee: req.user.employee
     });
 

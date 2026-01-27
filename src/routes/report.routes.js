@@ -745,9 +745,9 @@ router.get('/stats', protect, isHROrAbove, async (req, res) => {
 // @access  Private (Manager with department = 'Manager')
 router.post('/employee/:employeeId', protect, async (req, res) => {
   try {
-    // Check if user is a manager by department name
-    const userDeptName = req.user.employee?.department?.name || req.user.employee?.department;
-    const isManager = typeof userDeptName === 'string' && userDeptName.toLowerCase() === 'manager';
+    // Check if user is a manager by designation
+    const userDesignation = req.user.employee?.designation;
+    const isManager = typeof userDesignation === 'string' && userDesignation.toLowerCase() === 'manager';
 
     if (!isManager) {
       return res.status(403).json({
@@ -837,9 +837,9 @@ router.post('/employee/:employeeId', protect, async (req, res) => {
 // @access  Private (Manager with department = 'Manager')
 router.get('/employee/:employeeId/today', protect, async (req, res) => {
   try {
-    // Check if user is a manager by department name
-    const userDeptName = req.user.employee?.department?.name || req.user.employee?.department;
-    const isManager = typeof userDeptName === 'string' && userDeptName.toLowerCase() === 'manager';
+    // Check if user is a manager by designation
+    const userDesignation = req.user.employee?.designation;
+    const isManager = typeof userDesignation === 'string' && userDesignation.toLowerCase() === 'manager';
 
     if (!isManager) {
       return res.status(403).json({
@@ -881,9 +881,9 @@ router.get('/employee/:employeeId/today', protect, async (req, res) => {
 // @access  Private (Manager with department = 'Manager')
 router.get('/manager/updated', protect, async (req, res) => {
   try {
-    // Check if user is a manager by department name
-    const userDeptName = req.user.employee?.department?.name || req.user.employee?.department;
-    const isManager = typeof userDeptName === 'string' && userDeptName.toLowerCase() === 'manager';
+    // Check if user is a manager by designation
+    const userDesignation = req.user.employee?.designation;
+    const isManager = typeof userDesignation === 'string' && userDesignation.toLowerCase() === 'manager';
 
     if (!isManager) {
       return res.status(403).json({
@@ -892,15 +892,27 @@ router.get('/manager/updated', protect, async (req, res) => {
       });
     }
 
-    const { page = 1, limit = 30 } = req.query;
+    const { page = 1, limit = 30, startDate, endDate } = req.query;
 
-    // Get reports created or updated by this manager
-    const reports = await Report.find({
+    const query = {
       $or: [
         { createdBy: req.user._id },
         { updatedBy: req.user._id }
       ]
-    })
+    };
+
+    if (startDate || endDate) {
+      query.date = {};
+      if (startDate) query.date.$gte = new Date(startDate);
+      if (endDate) {
+        const end = new Date(endDate);
+        end.setHours(23, 59, 59, 999);
+        query.date.$lte = end;
+      }
+    }
+
+    // Get reports created or updated by this manager
+    const reports = await Report.find(query)
       .populate({
         path: 'employee',
         select: 'firstName lastName employeeId department',
@@ -912,12 +924,7 @@ router.get('/manager/updated', protect, async (req, res) => {
       .limit(parseInt(limit))
       .lean();
 
-    const total = await Report.countDocuments({
-      $or: [
-        { createdBy: req.user._id },
-        { updatedBy: req.user._id }
-      ]
-    });
+    const total = await Report.countDocuments(query);
 
     res.json({
       success: true,
