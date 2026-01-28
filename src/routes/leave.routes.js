@@ -294,6 +294,21 @@ router.post('/', protect, leaveUpload.single('image'), leaveValidator, async (re
   try {
     const leaveData = { ...req.body };
 
+    // Explicitly parse dates and calculate totalDays
+    // This fixes the 500 error where totalDays was missing or invalid during validation
+    const start = new Date(leaveData.startDate);
+    const end = new Date(leaveData.endDate);
+
+    if (isNaN(start.getTime()) || isNaN(end.getTime())) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid start or end date'
+      });
+    }
+
+    const diffTime = Math.abs(end - start);
+    leaveData.totalDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
+
     // If an image was uploaded, add it to attachments
     if (req.file) {
       const baseUrl = `${req.protocol}://${req.get('host')}`;
@@ -314,6 +329,7 @@ router.post('/', protect, leaveUpload.single('image'), leaveValidator, async (re
       data: { leave }
     });
   } catch (error) {
+    console.error('[Leave Create Error]:', error);
     res.status(500).json({
       success: false,
       message: 'Error creating leave request',
