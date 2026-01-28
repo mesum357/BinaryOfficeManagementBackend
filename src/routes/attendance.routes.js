@@ -244,6 +244,30 @@ router.get('/today', protect, async (req, res) => {
     // Check for active break
     const activeBreak = attendance?.breaks?.find(b => !b.endTime) || null;
 
+    // Calculate current working hours if clocked in but not clocked out
+    let currentWorkingHours = attendance?.workingHours || 0;
+    if (attendance?.checkIn?.time && !attendance?.checkOut?.time) {
+      const startTime = new Date(attendance.checkIn.time);
+      const now = new Date();
+      const diffMs = now - startTime;
+      let diffHours = diffMs / (1000 * 60 * 60);
+
+      // Subtract break time
+      let breakHours = 0;
+      if (attendance.breaks && attendance.breaks.length > 0) {
+        breakHours = attendance.breaks.reduce((total, b) => {
+          if (b.endTime) {
+            return total + (b.duration || 0);
+          } else {
+            // Include duration of active break up to now
+            const breakDiffMs = now - new Date(b.startTime);
+            return total + (breakDiffMs / (1000 * 60));
+          }
+        }, 0) / 60;
+      }
+      currentWorkingHours = Math.max(0, diffHours - breakHours);
+    }
+
     res.json({
       success: true,
       data: {
@@ -251,7 +275,8 @@ router.get('/today', protect, async (req, res) => {
         isCheckedIn: !!attendance?.checkIn?.time,
         isCheckedOut: !!attendance?.checkOut?.time,
         isOnBreak: !!activeBreak,
-        activeBreak
+        activeBreak,
+        currentWorkingHours: parseFloat(currentWorkingHours.toFixed(2))
       }
     });
   } catch (error) {
