@@ -45,6 +45,6 @@ const reportSchema = new mongoose.Schema({
 // Index for faster queries
 reportSchema.index({ employee: 1, date: -1 });
 reportSchema.index({ date: -1 });
-reportSchema.index({ employee: 1, date: 1 }, { unique: true }); // One report per employee per day
+reportSchema.index({ employee: 1, date: 1 }); // Multiple reports allowed per day
 
 module.exports = mongoose.model('Report', reportSchema);

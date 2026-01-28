@@ -28,38 +28,8 @@ router.post('/', protect, async (req, res) => {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
-    // Check if report already exists for today
-    const existingReport = await Report.findOne({
-      employee: employeeId,
-      date: {
-        $gte: today,
-        $lt: new Date(today.getTime() + 24 * 60 * 60 * 1000) // Next day
-      }
-    });
-
-    if (existingReport) {
-      // Update existing report
-      if (headset !== undefined) existingReport.headset = headset;
-      if (sales !== undefined) existingReport.sales = sales;
-      if (req.body.salesCount !== undefined) existingReport.salesCount = req.body.salesCount;
-      if (req.body.salesDetails !== undefined) existingReport.salesDetails = req.body.salesDetails;
-
-      await existingReport.save();
-
-      await existingReport.populate({
-        path: 'employee',
-        select: 'firstName lastName employeeId department',
-        populate: { path: 'department', select: 'name' }
-      });
-
-      return res.json({
-        success: true,
-        message: 'Report updated successfully',
-        data: { report: existingReport }
-      });
-    }
-
-    // Create new report
+    // Always create a new report record as per requirement
+    // This allows multiple sales records per day
     const report = await Report.create({
       employee: employeeId,
       date: today,
@@ -67,6 +37,18 @@ router.post('/', protect, async (req, res) => {
       sales: sales || 0,
       salesCount: req.body.salesCount || 0,
       salesDetails: req.body.salesDetails || ''
+    });
+
+    await report.populate({
+      path: 'employee',
+      select: 'firstName lastName employeeId department',
+      populate: { path: 'department', select: 'name' }
+    });
+
+    res.status(201).json({
+      success: true,
+      message: 'Report submitted successfully',
+      data: { report }
     });
 
     await report.populate({
@@ -291,7 +273,7 @@ router.get('/today', protect, async (req, res) => {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
-    const report = await Report.findOne({
+    const reports = await Report.find({
       employee: employeeId,
       date: {
         $gte: today,
@@ -301,9 +283,27 @@ router.get('/today', protect, async (req, res) => {
       .populate('employee', 'firstName lastName employeeId')
       .lean();
 
+    if (reports.length === 0) {
+      return res.json({
+        success: true,
+        data: { report: null }
+      });
+    }
+
+    // Aggregate multiple reports for today
+    const aggregatedReport = {
+      ...reports[0],
+      headset: reports.reduce((sum, r) => sum + (r.headset || 0), 0),
+      sales: reports.reduce((sum, r) => sum + (r.sales || 0), 0),
+      salesCount: reports.reduce((sum, r) => sum + (r.salesCount || 0), 0),
+      salesDetails: reports.map(r => r.salesDetails).filter(Boolean).join('; '),
+      isAggregated: true,
+      recordCount: reports.length
+    };
+
     res.json({
       success: true,
-      data: { report }
+      data: { report: aggregatedReport }
     });
   } catch (error) {
     console.error('Error fetching today\'s report:', error);
@@ -639,22 +639,19 @@ router.get('/stats', protect, isHROrAbove, async (req, res) => {
       {
         $group: {
           _id: { $dateToString: { format: '%Y-%m-%d', date: '$date' } },
-          dateValue: { $first: '$date' }, // Keep original date for sorting
-          totalEmployees: { $sum: 1 },
-          headsetCount: {
-            $sum: '$headset'
-          }
+          dateValue: { $first: '$date' },
+          uniqueEmployees: { $addToSet: '$employee' },
+          headsetCount: { $sum: '$headset' }
         }
       },
       { $sort: { dateValue: -1 } },
-      { $limit: 30 }, // Last 30 days
+      { $limit: 30 },
       {
         $project: {
           _id: 0,
           date: '$dateValue',
-          totalEmployees: 1,
-          headsetCount: 1,
-          salesCount: 1
+          totalEmployees: { $size: '$uniqueEmployees' },
+          headsetCount: 1
         }
       }
     ]);
@@ -665,23 +662,28 @@ router.get('/stats', protect, isHROrAbove, async (req, res) => {
       {
         $group: {
           _id: { $dateToString: { format: '%Y-%m-%d', date: '$date' } },
-          dateValue: { $first: '$date' }, // Keep original date for sorting
+          dateValue: { $first: '$date' },
+          uniqueEmployees: { $addToSet: '$employee' },
           totalSales: { $sum: '$sales' },
-          totalSalesCount: { $sum: '$salesCount' },
-          employeeCount: { $sum: 1 },
-          avgSales: { $avg: '$sales' }
+          totalSalesCount: { $sum: '$salesCount' }
         }
       },
       { $sort: { dateValue: -1 } },
-      { $limit: 30 }, // Last 30 days
+      { $limit: 30 },
       {
         $project: {
           _id: 0,
           date: '$dateValue',
           totalSales: 1,
           totalSalesCount: 1,
-          employeeCount: 1,
-          avgSales: { $round: ['$avgSales', 2] }
+          employeeCount: { $size: '$uniqueEmployees' },
+          avgSales: {
+            $cond: [
+              { $eq: [{ $size: '$uniqueEmployees' }, 0] },
+              0,
+              { $round: [{ $divide: ['$totalSales', { $size: '$uniqueEmployees' }] }, 2] }
+            ]
+          }
         }
       }
     ]);
@@ -790,39 +792,8 @@ router.post('/employee/:employeeId', protect, async (req, res) => {
     }
     reportDate.setHours(0, 0, 0, 0);
 
-    // Check if report already exists for the given date
-    const existingReport = await Report.findOne({
-      employee: employeeId,
-      date: {
-        $gte: reportDate,
-        $lt: new Date(reportDate.getTime() + 24 * 60 * 60 * 1000)
-      }
-    });
-
-    if (existingReport) {
-      // Update existing report
-      if (headset !== undefined) existingReport.headset = headset;
-      if (sales !== undefined) existingReport.sales = sales;
-      if (req.body.salesCount !== undefined) existingReport.salesCount = req.body.salesCount;
-      if (req.body.salesDetails !== undefined) existingReport.salesDetails = req.body.salesDetails;
-
-      existingReport.updatedBy = req.user._id;
-      await existingReport.save();
-
-      await existingReport.populate({
-        path: 'employee',
-        select: 'firstName lastName employeeId department',
-        populate: { path: 'department', select: 'name' }
-      });
-
-      return res.json({
-        success: true,
-        message: `Report updated for ${employee.firstName} ${employee.lastName}`,
-        data: { report: existingReport }
-      });
-    }
-
-    // Create new report
+    // Always create a new report record as per requirement (Manager view)
+    // This enables multiple sales records for the same employee on the same day
     const report = await Report.create({
       employee: employeeId,
       date: reportDate,
@@ -844,11 +815,77 @@ router.post('/employee/:employeeId', protect, async (req, res) => {
       message: `Report submitted for ${employee.firstName} ${employee.lastName}`,
       data: { report }
     });
+
+    await report.populate({
+      path: 'employee',
+      select: 'firstName lastName employeeId department',
+      populate: { path: 'department', select: 'name' }
+    });
+
+    res.status(201).json({
+      success: true,
+      message: `Report submitted for ${employee.firstName} ${employee.lastName}`,
+      data: { report }
+    });
   } catch (error) {
     console.error('Error creating/updating employee report:', error);
     res.status(500).json({
       success: false,
       message: 'Error submitting employee report',
+      error: error.message
+    });
+  }
+});
+
+// @route   PUT /api/reports/:id
+// @desc    Update a specific report (Manager only)
+// @access  Private (Manager)
+router.put('/:id', protect, async (req, res) => {
+  try {
+    const userDesignation = req.user.employee?.designation;
+    const isManager = typeof userDesignation === 'string' && userDesignation.toLowerCase() === 'manager';
+
+    if (!isManager) {
+      return res.status(403).json({
+        success: false,
+        message: 'Only managers can update reports'
+      });
+    }
+
+    const { headset, sales, salesCount, salesDetails } = req.body;
+    const report = await Report.findById(req.params.id);
+
+    if (!report) {
+      return res.status(404).json({
+        success: false,
+        message: 'Report not found'
+      });
+    }
+
+    if (headset !== undefined) report.headset = headset;
+    if (sales !== undefined) report.sales = sales;
+    if (salesCount !== undefined) report.salesCount = salesCount;
+    if (salesDetails !== undefined) report.salesDetails = salesDetails;
+
+    report.updatedBy = req.user._id;
+    await report.save();
+
+    await report.populate({
+      path: 'employee',
+      select: 'firstName lastName employeeId department',
+      populate: { path: 'department', select: 'name' }
+    });
+
+    res.json({
+      success: true,
+      message: 'Report updated successfully',
+      data: { report }
+    });
+  } catch (error) {
+    console.error('Error updating report:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error updating report',
       error: error.message
     });
   }
@@ -884,7 +921,7 @@ router.get('/employee/:employeeId/today', protect, async (req, res) => {
     }
     reportDate.setHours(0, 0, 0, 0);
 
-    const report = await Report.findOne({
+    const reports = await Report.find({
       employee: employeeId,
       date: {
         $gte: reportDate,
@@ -894,9 +931,27 @@ router.get('/employee/:employeeId/today', protect, async (req, res) => {
       .populate('employee', 'firstName lastName employeeId')
       .lean();
 
+    if (reports.length === 0) {
+      return res.json({
+        success: true,
+        data: { report: null }
+      });
+    }
+
+    // Aggregate multiple reports
+    const aggregatedReport = {
+      ...reports[0],
+      headset: reports.reduce((sum, r) => sum + (r.headset || 0), 0),
+      sales: reports.reduce((sum, r) => sum + (r.sales || 0), 0),
+      salesCount: reports.reduce((sum, r) => sum + (r.salesCount || 0), 0),
+      salesDetails: reports.map(r => r.salesDetails).filter(Boolean).join('; '),
+      isAggregated: true,
+      recordCount: reports.length
+    };
+
     res.json({
       success: true,
-      data: { report }
+      data: { report: aggregatedReport }
     });
   } catch (error) {
     console.error('Error fetching employee report:', error);

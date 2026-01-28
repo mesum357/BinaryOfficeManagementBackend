@@ -55,15 +55,18 @@ const leaveSchema = new mongoose.Schema({
     default: false
   },
   contactDuringLeave: {
-    phone: String,
     email: String
+  },
+  isRead: {
+    type: Boolean,
+    default: false
   }
 }, {
   timestamps: true
 });
 
 // Calculate total days before saving
-leaveSchema.pre('save', function(next) {
+leaveSchema.pre('save', function (next) {
   if (this.startDate && this.endDate) {
     const diffTime = Math.abs(this.endDate - this.startDate);
     this.totalDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;

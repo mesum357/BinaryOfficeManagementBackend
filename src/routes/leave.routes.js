@@ -323,6 +323,24 @@ router.post('/', protect, leaveUpload.single('image'), leaveValidator, async (re
       employee: req.user.employee
     });
 
+    // Emit socket notification for new leave request
+    const io = req.app.get('io');
+    if (io) {
+      // Find employee details for the notification
+      const employee = await Employee.findById(req.user.employee);
+      io.emit('newLeaveRequest', {
+        _id: leave._id,
+        leaveType: leave.leaveType,
+        startDate: leave.startDate,
+        endDate: leave.endDate,
+        totalDays: leave.totalDays,
+        employee: {
+          firstName: employee?.firstName || 'Unknown',
+          lastName: employee?.lastName || 'Employee'
+        }
+      });
+    }
+
     res.status(201).json({
       success: true,
       message: 'Leave request submitted successfully',
@@ -604,6 +622,61 @@ router.delete('/policy/:id', protect, isHROrAbove, async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Error deleting leave policy',
+      error: error.message
+    });
+  }
+});
+
+// @route   GET /api/leaves/unread-count
+// @desc    Get count of unread leave requests
+// @access  Private (Managers)
+router.get('/unread-count', protect, isHROrAbove, async (req, res) => {
+  try {
+    const unreadCount = await Leave.countDocuments({
+      status: 'pending',
+      isRead: false
+    });
+
+    res.json({
+      success: true,
+      data: { unreadCount }
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching unread count',
+      error: error.message
+    });
+  }
+});
+
+// @route   PUT /api/leaves/:id/mark-read
+// @desc    Mark a leave request as read
+// @access  Private (Managers)
+router.put('/:id/mark-read', protect, isHROrAbove, async (req, res) => {
+  try {
+    const leave = await Leave.findByIdAndUpdate(
+      req.params.id,
+      { isRead: true },
+      { new: true }
+    );
+
+    if (!leave) {
+      return res.status(404).json({
+        success: false,
+        message: 'Leave request not found'
+      });
+    }
+
+    res.json({
+      success: true,
+      message: 'Leave request marked as read',
+      data: { leave }
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Error marking leave as read',
       error: error.message
     });
   }
