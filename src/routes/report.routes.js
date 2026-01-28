@@ -39,8 +39,11 @@ router.post('/', protect, async (req, res) => {
 
     if (existingReport) {
       // Update existing report
-      existingReport.headset = headset || 0;
-      existingReport.sales = sales || 0;
+      if (headset !== undefined) existingReport.headset = headset;
+      if (sales !== undefined) existingReport.sales = sales;
+      if (req.body.salesCount !== undefined) existingReport.salesCount = req.body.salesCount;
+      if (req.body.salesDetails !== undefined) existingReport.salesDetails = req.body.salesDetails;
+
       await existingReport.save();
 
       await existingReport.populate({
@@ -61,7 +64,9 @@ router.post('/', protect, async (req, res) => {
       employee: employeeId,
       date: today,
       headset: headset || 0,
-      sales: sales || 0
+      sales: sales || 0,
+      salesCount: req.body.salesCount || 0,
+      salesDetails: req.body.salesDetails || ''
     });
 
     await report.populate({
@@ -648,7 +653,8 @@ router.get('/stats', protect, isHROrAbove, async (req, res) => {
           _id: 0,
           date: '$dateValue',
           totalEmployees: 1,
-          headsetCount: 1
+          headsetCount: 1,
+          salesCount: 1
         }
       }
     ]);
@@ -661,6 +667,7 @@ router.get('/stats', protect, isHROrAbove, async (req, res) => {
           _id: { $dateToString: { format: '%Y-%m-%d', date: '$date' } },
           dateValue: { $first: '$date' }, // Keep original date for sorting
           totalSales: { $sum: '$sales' },
+          totalSalesCount: { $sum: '$salesCount' },
           employeeCount: { $sum: 1 },
           avgSales: { $avg: '$sales' }
         }
@@ -672,6 +679,7 @@ router.get('/stats', protect, isHROrAbove, async (req, res) => {
           _id: 0,
           date: '$dateValue',
           totalSales: 1,
+          totalSalesCount: 1,
           employeeCount: 1,
           avgSales: { $round: ['$avgSales', 2] }
         }
@@ -685,6 +693,7 @@ router.get('/stats', protect, isHROrAbove, async (req, res) => {
         $group: {
           _id: '$employee',
           totalSales: { $sum: '$sales' },
+          totalSalesCount: { $sum: '$salesCount' },
           totalReports: { $sum: 1 },
           headsetDays: {
             $sum: '$headset'
@@ -706,6 +715,7 @@ router.get('/stats', protect, isHROrAbove, async (req, res) => {
           firstName: '$employeeData.firstName',
           lastName: '$employeeData.lastName',
           totalSales: 1,
+          totalSalesCount: 1,
           totalReports: 1,
           headsetDays: 1
         }
@@ -724,6 +734,7 @@ router.get('/stats', protect, isHROrAbove, async (req, res) => {
         salesStats: salesStats.map(stat => ({
           _id: stat.date,
           totalSales: stat.totalSales || 0,
+          totalSalesCount: stat.totalSalesCount || 0,
           employeeCount: stat.employeeCount || 0,
           avgSales: stat.avgSales || 0
         })),
@@ -790,8 +801,11 @@ router.post('/employee/:employeeId', protect, async (req, res) => {
 
     if (existingReport) {
       // Update existing report
-      existingReport.headset = headset || 0;
-      existingReport.sales = sales || 0;
+      if (headset !== undefined) existingReport.headset = headset;
+      if (sales !== undefined) existingReport.sales = sales;
+      if (req.body.salesCount !== undefined) existingReport.salesCount = req.body.salesCount;
+      if (req.body.salesDetails !== undefined) existingReport.salesDetails = req.body.salesDetails;
+
       existingReport.updatedBy = req.user._id;
       await existingReport.save();
 
@@ -814,6 +828,8 @@ router.post('/employee/:employeeId', protect, async (req, res) => {
       date: reportDate,
       headset: headset || 0,
       sales: sales || 0,
+      salesCount: req.body.salesCount || 0,
+      salesDetails: req.body.salesDetails || '',
       createdBy: req.user._id
     });
 

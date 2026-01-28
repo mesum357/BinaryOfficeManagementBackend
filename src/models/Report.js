@@ -16,10 +16,19 @@ const reportSchema = new mongoose.Schema({
     default: 0,
     min: 0
   },
-  sales: {
+  sales: { // This will now represent salesAmount
     type: Number,
     default: 0,
     min: 0
+  },
+  salesCount: {
+    type: Number,
+    default: 0,
+    min: 0
+  },
+  salesDetails: {
+    type: String,
+    default: ''
   },
   createdBy: {
     type: mongoose.Schema.Types.ObjectId,
