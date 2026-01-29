@@ -50,18 +50,6 @@ router.post('/', protect, async (req, res) => {
       message: 'Report submitted successfully',
       data: { report }
     });
-
-    await report.populate({
-      path: 'employee',
-      select: 'firstName lastName employeeId department',
-      populate: { path: 'department', select: 'name' }
-    });
-
-    res.status(201).json({
-      success: true,
-      message: 'Report submitted successfully',
-      data: { report }
-    });
   } catch (error) {
     console.error('Error creating/updating report:', error);
 
@@ -815,20 +803,17 @@ router.post('/employee/:employeeId', protect, async (req, res) => {
       message: `Report submitted for ${employee.firstName} ${employee.lastName}`,
       data: { report }
     });
-
-    await report.populate({
-      path: 'employee',
-      select: 'firstName lastName employeeId department',
-      populate: { path: 'department', select: 'name' }
-    });
-
-    res.status(201).json({
-      success: true,
-      message: `Report submitted for ${employee.firstName} ${employee.lastName}`,
-      data: { report }
-    });
   } catch (error) {
     console.error('Error creating/updating employee report:', error);
+
+    // Handle duplicate key error (unique constraint violation)
+    if (error.code === 11000) {
+      return res.status(400).json({
+        success: false,
+        message: 'A report for this employee and date already exists with a unique constraint. Please contact admin if this persists.'
+      });
+    }
+
     res.status(500).json({
       success: false,
       message: 'Error submitting employee report',
