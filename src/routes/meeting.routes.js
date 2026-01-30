@@ -1,5 +1,6 @@
 const express = require('express');
 const Meeting = require('../models/Meeting');
+const User = require('../models/User');
 const { protect, isHROrAbove } = require('../middleware/auth');
 const { meetingValidator } = require('../middleware/validators');
 
@@ -194,11 +195,15 @@ router.post('/', protect, isHROrAbove, meetingValidator, async (req, res) => {
     // Emit socket event for real-time notification
     const io = req.app.get('io');
     if (io && req.body.attendees) {
-      req.body.attendees.forEach(attendee => {
-        io.to(attendee.employee).emit('newMeeting', {
-          id: meeting._id,
-          title: meeting.title,
-          startTime: meeting.startTime
+      // Find all users associated with these employees
+      const employeeIds = req.body.attendees.map(a => a.employee);
+      User.find({ employee: { $in: employeeIds } }).select('_id employee').then(users => {
+        users.forEach(user => {
+          io.to(user._id.toString()).emit('newMeeting', {
+            id: meeting._id,
+            title: meeting.title,
+            startTime: meeting.startTime
+          });
         });
       });
     }
