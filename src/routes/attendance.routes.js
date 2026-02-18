@@ -137,12 +137,30 @@ router.post('/check-in', protect, async (req, res) => {
     }
 
     const checkInTime = new Date();
-    const workStartTime = new Date();
-    workStartTime.setHours(7, 5, 0, 0); // 7:05 AM
+
+    // Block clock-in after 4:00 PM
+    const cutoffTime = new Date();
+    cutoffTime.setHours(16, 0, 0, 0); // 4:00 PM
+    if (checkInTime >= cutoffTime) {
+      return res.status(400).json({
+        success: false,
+        message: 'Cannot clock in after 4:00 PM'
+      });
+    }
 
     // Determine status based on check-in time
-    let status = 'present';
-    if (checkInTime > workStartTime) {
+    const earlyThreshold = new Date();
+    earlyThreshold.setHours(7, 0, 0, 0); // 7:00 AM
+
+    const presentThreshold = new Date();
+    presentThreshold.setHours(7, 5, 0, 0); // 7:05 AM
+
+    let status;
+    if (checkInTime < earlyThreshold) {
+      status = 'early';
+    } else if (checkInTime <= presentThreshold) {
+      status = 'present';
+    } else {
       status = 'late';
     }
 
@@ -206,10 +224,27 @@ router.post('/check-out', protect, async (req, res) => {
       });
     }
 
+    const checkOutTime = new Date();
     attendance.checkOut = {
-      time: new Date(),
+      time: checkOutTime,
       ipAddress: req.ip
     };
+
+    // Determine checkout status based on time
+    const normalEndStart = new Date();
+    normalEndStart.setHours(16, 0, 0, 0); // 4:00 PM
+    const normalEndEnd = new Date();
+    normalEndEnd.setHours(16, 5, 0, 0); // 4:05 PM
+
+    if (checkOutTime > normalEndEnd) {
+      // After 4:05 PM → Overtime
+      attendance.status = 'overtime';
+    } else if (checkOutTime >= normalEndStart && checkOutTime <= normalEndEnd) {
+      // 4:00 PM – 4:05 PM → Clocked Out (normal)
+      attendance.status = 'clocked-out';
+    }
+    // If before 4:00 PM, keep the existing status (early/present/late)
+
     await attendance.save();
 
     res.json({
