@@ -80,13 +80,25 @@ attendanceSchema.pre('save', function (next) {
 
     this.workingHours = Math.max(0, diffHours - breakHours);
 
-    // Calculate overtime (assuming 8 hours is standard)
-    if (this.workingHours > 8) {
-      this.overtime = this.workingHours - 8;
+    // Calculate overtime based on checkout time after 4:00 AM
+    if (this.checkOut.time) {
+      const checkOutDate = new Date(this.checkOut.time);
+      const fourAM = new Date(checkOutDate);
+      fourAM.setHours(4, 0, 0, 0);
+
+      // If checkout is after 4:00 AM (and logically before noon to distinguish from afternoon/evening checkout)
+      // we consider it overtime.
+      // Note: This logic assumes that a checkout after 4 AM belongs to the "previous day's" shift
+      // effectively extending into the next morning.
+      if (checkOutDate > fourAM && checkOutDate.getHours() < 12) {
+        const overtimeMs = checkOutDate - fourAM;
+        this.overtime = overtimeMs / (1000 * 60 * 60);
+      } else {
+        this.overtime = 0;
+      }
     }
   }
   next();
 });
 
 module.exports = mongoose.model('Attendance', attendanceSchema);
-
