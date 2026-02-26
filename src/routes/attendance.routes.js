@@ -5,6 +5,22 @@ const { protect, isHROrAbove } = require('../middleware/auth');
 
 const router = express.Router();
 
+// ─── Night-Shift Helper ───────────────────────────────────────────────
+// The working day resets at 6:00 PM.
+//   • If current time >= 18:00  →  shift date = today (new shift started)
+//   • If current time <  18:00  →  shift date = yesterday (still in last night's shift)
+// The returned Date is always at midnight (00:00:00) of the shift date,
+// which is the value stored in attendance.date for the unique index.
+function getShiftDate(now) {
+  const d = new Date(now);
+  if (d.getHours() < 18) {
+    // Before 6 PM → belongs to yesterday's shift
+    d.setDate(d.getDate() - 1);
+  }
+  d.setHours(0, 0, 0, 0);
+  return d;
+}
+
 // @route   GET /api/attendance
 // @desc    Get attendance records
 // @access  Private
@@ -98,6 +114,7 @@ router.get('/my', protect, async (req, res) => {
       late: attendance.filter(a => a.status === 'late').length,
       halfDay: attendance.filter(a => a.status === 'half-day').length,
       onLeave: attendance.filter(a => a.status === 'on-leave').length,
+      earlyClockout: attendance.filter(a => a.status === 'early-clockout').length,
       totalWorkingHours: attendance.reduce((sum, a) => sum + (a.workingHours || 0), 0),
       totalOvertime: attendance.reduce((sum, a) => sum + (a.overtime || 0), 0)
     };
@@ -116,51 +133,52 @@ router.get('/my', protect, async (req, res) => {
 });
 
 // @route   POST /api/attendance/check-in
-// @desc    Check in for the day
+// @desc    Check in for the night shift
 // @access  Private
 router.post('/check-in', protect, async (req, res) => {
   try {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    const now = new Date();
+    const currentHour = now.getHours();
+    const currentMinute = now.getMinutes();
 
-    // Check if already checked in today
+    // ── Block clock-in during dead zone: 4:00 AM – 5:59 PM ──
+    if (currentHour >= 4 && currentHour < 18) {
+      return res.status(400).json({
+        success: false,
+        message: 'Cannot clock in between 4:00 AM and 6:00 PM. Shift starts at 6:00 PM.'
+      });
+    }
+
+    const shiftDate = getShiftDate(now);
+
+    // Check if already checked in for this shift
     let attendance = await Attendance.findOne({
       employee: req.user.employee,
-      date: today
+      date: shiftDate
     });
 
     if (attendance && attendance.checkIn?.time) {
       return res.status(400).json({
         success: false,
-        message: 'Already checked in today'
+        message: 'Already checked in for this shift'
       });
     }
 
-    const checkInTime = new Date();
+    const checkInTime = now;
 
-    // Block clock-in after 4:00 PM
-    const cutoffTime = new Date();
-    cutoffTime.setHours(16, 0, 0, 0); // 4:00 PM
-    if (checkInTime >= cutoffTime) {
-      return res.status(400).json({
-        success: false,
-        message: 'Cannot clock in after 4:00 PM'
-      });
-    }
-
-    // Determine status based on check-in time
-    const earlyThreshold = new Date();
-    earlyThreshold.setHours(7, 0, 0, 0); // 7:00 AM
-
-    const presentThreshold = new Date();
-    presentThreshold.setHours(7, 5, 0, 0); // 7:05 AM
-
+    // ── Determine status based on check-in time ──
+    // Early:   6:00 PM – 6:59 PM  (18:00 – 18:59)
+    // Present: 7:00 PM – 7:05 PM  (19:00 – 19:05)
+    // Late:    after 7:05 PM
     let status;
-    if (checkInTime < earlyThreshold) {
+    if (currentHour >= 18 && currentHour < 19) {
+      // 6:00 PM to 6:59 PM → Early
       status = 'early';
-    } else if (checkInTime <= presentThreshold) {
+    } else if (currentHour === 19 && currentMinute <= 5) {
+      // 7:00 PM to 7:05 PM → Present
       status = 'present';
     } else {
+      // After 7:05 PM (or after midnight before 4 AM) → Late
       status = 'late';
     }
 
@@ -174,7 +192,7 @@ router.post('/check-in', protect, async (req, res) => {
     } else {
       attendance = await Attendance.create({
         employee: req.user.employee,
-        date: today,
+        date: shiftDate,
         checkIn: {
           time: checkInTime,
           ipAddress: req.ip
@@ -198,16 +216,16 @@ router.post('/check-in', protect, async (req, res) => {
 });
 
 // @route   POST /api/attendance/check-out
-// @desc    Check out for the day
+// @desc    Check out for the night shift
 // @access  Private
 router.post('/check-out', protect, async (req, res) => {
   try {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    const now = new Date();
+    const shiftDate = getShiftDate(now);
 
     const attendance = await Attendance.findOne({
       employee: req.user.employee,
-      date: today
+      date: shiftDate
     });
 
     if (!attendance || !attendance.checkIn?.time) {
@@ -220,30 +238,48 @@ router.post('/check-out', protect, async (req, res) => {
     if (attendance.checkOut?.time) {
       return res.status(400).json({
         success: false,
-        message: 'Already checked out today'
+        message: 'Already checked out for this shift'
       });
     }
 
-    const checkOutTime = new Date();
+    const checkOutTime = now;
     attendance.checkOut = {
       time: checkOutTime,
       ipAddress: req.ip
     };
 
-    // Determine checkout status based on time
-    const normalEndStart = new Date();
-    normalEndStart.setHours(16, 0, 0, 0); // 4:00 PM
-    const normalEndEnd = new Date();
-    normalEndEnd.setHours(16, 5, 0, 0); // 4:05 PM
+    // ── Determine checkout status based on time ──
+    const hour = checkOutTime.getHours();
+    const minute = checkOutTime.getMinutes();
 
-    if (checkOutTime > normalEndEnd) {
-      // After 4:05 PM → Overtime
-      attendance.status = 'overtime';
-    } else if (checkOutTime >= normalEndStart && checkOutTime <= normalEndEnd) {
-      // 4:00 PM – 4:05 PM → Clocked Out (normal)
-      attendance.status = 'clocked-out';
+    // Build reference times for comparison
+    const earlyClockoutLimit = new Date(checkOutTime);
+    earlyClockoutLimit.setHours(3, 55, 0, 0); // 3:55 AM
+
+    const normalStart = new Date(checkOutTime);
+    normalStart.setHours(4, 0, 0, 0); // 4:00 AM
+
+    const normalEnd = new Date(checkOutTime);
+    normalEnd.setHours(4, 5, 0, 0); // 4:05 AM
+
+    // Only apply checkout-time rules during morning hours (midnight–noon)
+    // so evening checkouts (e.g. clocking out early the same evening) fallthrough
+    if (hour < 12) {
+      if (checkOutTime < earlyClockoutLimit) {
+        // Before 3:55 AM → Early Clock Out / Incomplete Day
+        attendance.status = 'early-clockout';
+      } else if (checkOutTime >= normalStart && checkOutTime <= normalEnd) {
+        // 4:00 AM – 4:05 AM → Normal clocked out (no overtime)
+        attendance.status = 'clocked-out';
+      } else if (checkOutTime > normalEnd) {
+        // After 4:05 AM → Overtime
+        attendance.status = 'overtime';
+      } else {
+        // 3:55 AM – 3:59 AM → Normal (grace window)
+        attendance.status = 'clocked-out';
+      }
     }
-    // If before 4:00 PM, keep the existing status (early/present/late)
+    // If checking out in the evening (before midnight) keep the existing status
 
     await attendance.save();
 
@@ -262,16 +298,16 @@ router.post('/check-out', protect, async (req, res) => {
 });
 
 // @route   GET /api/attendance/today
-// @desc    Get today's attendance status
+// @desc    Get current shift's attendance status
 // @access  Private
 router.get('/today', protect, async (req, res) => {
   try {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    const now = new Date();
+    const shiftDate = getShiftDate(now);
 
     const attendance = await Attendance.findOne({
       employee: req.user.employee,
-      date: today
+      date: shiftDate
     })
       .select('-__v')
       .lean();
@@ -283,7 +319,6 @@ router.get('/today', protect, async (req, res) => {
     let currentWorkingHours = attendance?.workingHours || 0;
     if (attendance?.checkIn?.time && !attendance?.checkOut?.time) {
       const startTime = new Date(attendance.checkIn.time);
-      const now = new Date();
       const diffMs = now - startTime;
       let diffHours = diffMs / (1000 * 60 * 60);
 
@@ -328,18 +363,18 @@ router.get('/today', protect, async (req, res) => {
 // @access  Private (HR or above)
 router.get('/stats', protect, isHROrAbove, async (req, res) => {
   try {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    const now = new Date();
+    const shiftDate = getShiftDate(now);
 
     const todayStats = await Attendance.aggregate([
-      { $match: { date: today } },
+      { $match: { date: shiftDate } },
       { $group: { _id: '$status', count: { $sum: 1 } } }
     ]);
 
     // Monthly stats
-    const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+    const startOfMonth = new Date(shiftDate.getFullYear(), shiftDate.getMonth(), 1);
     const monthlyStats = await Attendance.aggregate([
-      { $match: { date: { $gte: startOfMonth, $lte: today } } },
+      { $match: { date: { $gte: startOfMonth, $lte: shiftDate } } },
       { $group: { _id: '$status', count: { $sum: 1 } } }
     ]);
 
@@ -357,12 +392,12 @@ router.get('/stats', protect, isHROrAbove, async (req, res) => {
 });
 
 // @route   GET /api/attendance/today-presence
-// @desc    Get today's presence data with active/inactive employees
+// @desc    Get current shift's presence data with active/inactive employees
 // @access  Private (HR or above)
 router.get('/today-presence', protect, isHROrAbove, async (req, res) => {
   try {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    const now = new Date();
+    const shiftDate = getShiftDate(now);
 
     // Get employee IDs that are linked to HR, Boss, Admin, or Manager users (exclude from attendance)
     const User = require('../models/User');
@@ -382,14 +417,13 @@ router.get('/today-presence', protect, isHROrAbove, async (req, res) => {
       .populate('department', 'name')
       .lean();
 
-    // Get today's attendance records
-    const todayAttendance = await Attendance.find({ date: today })
+    // Get current shift's attendance records
+    const todayAttendance = await Attendance.find({ date: shiftDate })
       .populate('employee', 'firstName lastName employeeId department designation')
       .select('-__v')
       .lean();
 
     // Separate active (clocked in but not clocked out) and inactive (not clocked in or already clocked out)
-    // Handle both populated and non-populated employee references
     const activeEmployeeIds = new Set(
       todayAttendance
         .filter(att => att.checkIn?.time && !att.checkOut?.time)
@@ -434,7 +468,6 @@ router.get('/today-presence', protect, isHROrAbove, async (req, res) => {
         const totalBreakTime = calculateTotalBreakTime(attendance?.breaks);
 
         if (activeBreak) {
-          // Employee is on break
           onBreakList.push({
             ...emp,
             checkInTime: attendance?.checkIn?.time || null,
@@ -444,7 +477,6 @@ router.get('/today-presence', protect, isHROrAbove, async (req, res) => {
             totalBreakTime
           });
         } else {
-          // Employee is actively working
           activeList.push({
             ...emp,
             checkInTime: attendance?.checkIn?.time || null,
@@ -494,12 +526,12 @@ router.get('/today-presence', protect, isHROrAbove, async (req, res) => {
 router.post('/break/start', protect, async (req, res) => {
   try {
     const { reason } = req.body;
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    const now = new Date();
+    const shiftDate = getShiftDate(now);
 
     const attendance = await Attendance.findOne({
       employee: req.user.employee,
-      date: today
+      date: shiftDate
     });
 
     if (!attendance || !attendance.checkIn?.time) {
@@ -556,12 +588,12 @@ router.post('/break/start', protect, async (req, res) => {
 // @access  Private
 router.post('/break/end', protect, async (req, res) => {
   try {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    const now = new Date();
+    const shiftDate = getShiftDate(now);
 
     const attendance = await Attendance.findOne({
       employee: req.user.employee,
-      date: today
+      date: shiftDate
     });
 
     if (!attendance || !attendance.checkIn?.time) {
