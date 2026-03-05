@@ -6,15 +6,15 @@ const { protect, isHROrAbove } = require('../middleware/auth');
 const router = express.Router();
 
 // ─── Night-Shift Helper ───────────────────────────────────────────────
-// The working day resets at 6:00 PM.
-//   • If current time >= 18:00  →  shift date = today (new shift started)
-//   • If current time <  18:00  →  shift date = yesterday (still in last night's shift)
+// The working day resets at 3:00 PM.
+//   • If current time >= 15:00  →  shift date = today (new shift started)
+//   • If current time <  15:00  →  shift date = yesterday (still in last night's shift)
 // The returned Date is always at midnight (00:00:00) of the shift date,
 // which is the value stored in attendance.date for the unique index.
 function getShiftDate(now) {
   const d = new Date(now);
-  if (d.getHours() < 18) {
-    // Before 6 PM → belongs to yesterday's shift
+  if (d.getHours() < 15) {
+    // Before 3 PM → belongs to yesterday's shift
     d.setDate(d.getDate() - 1);
   }
   d.setHours(0, 0, 0, 0);
@@ -141,11 +141,11 @@ router.post('/check-in', protect, async (req, res) => {
     const currentHour = now.getHours();
     const currentMinute = now.getMinutes();
 
-    // ── Block clock-in during dead zone: 4:00 AM – 5:59 PM ──
-    if (currentHour >= 4 && currentHour < 18) {
+    // ── Block clock-in during dead zone: 4:00 AM – 2:59 PM ──
+    if (currentHour >= 4 && currentHour < 15) {
       return res.status(400).json({
         success: false,
-        message: 'Cannot clock in between 4:00 AM and 6:00 PM. Shift starts at 6:00 PM.'
+        message: 'Cannot clock in between 4:00 AM and 3:00 PM. Shift starts at 3:00 PM.'
       });
     }
 
@@ -167,18 +167,18 @@ router.post('/check-in', protect, async (req, res) => {
     const checkInTime = now;
 
     // ── Determine status based on check-in time ──
-    // Early:   6:00 PM – 6:59 PM  (18:00 – 18:59)
-    // Present: 7:00 PM – 7:05 PM  (19:00 – 19:05)
-    // Late:    after 7:05 PM
+    // Early:   3:00 PM – 3:59 PM  (15:00 – 15:59)
+    // Present: 4:00 PM – 4:05 PM  (16:00 – 16:05)
+    // Late:    after 4:05 PM
     let status;
-    if (currentHour >= 18 && currentHour < 19) {
-      // 6:00 PM to 6:59 PM → Early
+    if (currentHour >= 15 && currentHour < 16) {
+      // 3:00 PM to 3:59 PM → Early
       status = 'early';
-    } else if (currentHour === 19 && currentMinute <= 5) {
-      // 7:00 PM to 7:05 PM → Present
+    } else if (currentHour === 16 && currentMinute <= 5) {
+      // 4:00 PM to 4:05 PM → Present
       status = 'present';
     } else {
-      // After 7:05 PM (or after midnight before 4 AM) → Late
+      // After 4:05 PM (or after midnight before 4 AM) → Late
       status = 'late';
     }
 
