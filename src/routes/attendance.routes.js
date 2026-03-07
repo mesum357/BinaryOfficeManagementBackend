@@ -393,8 +393,19 @@ router.get('/stats', protect, isHROrAbove, async (req, res) => {
 
 // @route   GET /api/attendance/today-presence
 // @desc    Get current shift's presence data with active/inactive employees
-// @access  Private (HR or above)
-router.get('/today-presence', protect, isHROrAbove, async (req, res) => {
+// @access  Private (HR or above, or Manager by designation)
+router.get('/today-presence', protect, (req, res, next) => {
+  const allowedRoles = ['hr', 'manager', 'boss', 'admin'];
+  const isRoleAllowed = allowedRoles.includes(req.user.role);
+  const isManagerByDesignation = req.user.employee?.designation?.toLowerCase() === 'manager';
+  if (!isRoleAllowed && !isManagerByDesignation) {
+    return res.status(403).json({
+      success: false,
+      message: 'Access denied. HR or Manager privileges required.'
+    });
+  }
+  next();
+}, async (req, res) => {
   try {
     const now = new Date();
     const shiftDate = getShiftDate(now);
