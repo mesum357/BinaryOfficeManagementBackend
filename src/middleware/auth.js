@@ -1,11 +1,7 @@
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
 
-<<<<<<< Updated upstream
-// Protect routes - verify JWT token
-=======
 // Protect routes ---------verify JWT token
->>>>>>> Stashed changes
 const protect = async (req, res, next) => {
   try {
     let token;
