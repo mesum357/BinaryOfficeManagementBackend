@@ -1,0 +1,6 @@
+﻿package.json
+src/middleware/auth.js
+src/middleware/validators.js
+src/models/Attendance.js
+src/routes/attendance.routes.js
+src/seeders/seed.js

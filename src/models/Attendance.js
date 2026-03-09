@@ -28,7 +28,7 @@ const attendanceSchema = new mongoose.Schema({
   },
   status: {
     type: String,
-    enum: ['present', 'absent', 'late', 'half-day', 'on-leave', 'holiday', 'weekend'],
+    enum: ['present', 'absent', 'late', 'early', 'overtime', 'clocked-out', 'early-clockout', 'half-day', 'on-leave', 'holiday', 'weekend'],
     default: 'absent'
   },
   workingHours: {
@@ -67,22 +67,31 @@ const attendanceSchema = new mongoose.Schema({
 attendanceSchema.index({ employee: 1, date: 1 }, { unique: true });
 
 // Calculate working hours before saving
-attendanceSchema.pre('save', function(next) {
+attendanceSchema.pre('save', function (next) {
   if (this.checkIn?.time && this.checkOut?.time) {
     const diffMs = this.checkOut.time - this.checkIn.time;
     const diffHours = diffMs / (1000 * 60 * 60);
-    
+
     // Subtract break time
     let breakHours = 0;
     if (this.breaks && this.breaks.length > 0) {
       breakHours = this.breaks.reduce((total, b) => total + (b.duration || 0), 0) / 60;
     }
-    
     this.workingHours = Math.max(0, diffHours - breakHours);
-    
-    // Calculate overtime (assuming 8 hours is standard)
-    if (this.workingHours > 8) {
-      this.overtime = this.workingHours - 8;
+
+    // Calculate overtime based on checkout time after 4:05 AM
+    if (this.checkOut.time) {
+      const checkOutDate = new Date(this.checkOut.time);
+      const overtimeThreshold = new Date(checkOutDate);
+      overtimeThreshold.setHours(4, 5, 0, 0); // 4:05 AM
+
+      // If checkout is after 4:05 AM (and before noon to distinguish from evening)
+      if (checkOutDate > overtimeThreshold && checkOutDate.getHours() < 12) {
+        const overtimeMs = checkOutDate - overtimeThreshold;
+        this.overtime = overtimeMs / (1000 * 60 * 60);
+      } else {
+        this.overtime = 0;
+      }
     }
   }
   next();
